@@ -1104,11 +1104,11 @@
           <div class="mode-icon-box">⏱️</div>
           <div class="mode-card-title">
             <span>全真模拟考场</span>
-            <span class="mode-card-badge green">25单选 + 10多选</span>
+            <span class="mode-card-badge green">25单选 + 10多选 (满分45分)</span>
           </div>
-          <div class="mode-card-desc">18章均衡科学抽题，按期末标准试卷严格设计，倒计时交卷并出成绩单！</div>
+          <div class="mode-card-desc">18章均衡科学抽题，单选每题1分、多选每题2分，限时交卷判分！</div>
           <div style="margin-top:6px;">
-            <button class="btn-sm btn-success" style="font-size:12px; padding:5px 14px;">⏱️ 立即开考 (45分钟/100分)</button>
+            <button class="btn-sm btn-success" style="font-size:12px; padding:5px 14px;">⏱️ 立即开考 (45分钟/满分45分)</button>
           </div>
         </div>
 
@@ -1263,12 +1263,12 @@
             <span class="score-meta-lbl">答题用时</span>
           </div>
           <div class="score-meta-item">
-            <span class="score-meta-val" id="resultSingleScore">50/60</span>
-            <span class="score-meta-lbl">单选得分 (25题)</span>
+            <span class="score-meta-val" id="resultSingleScore">25/25</span>
+            <span class="score-meta-lbl">单选得分 (25题·每题1分)</span>
           </div>
           <div class="score-meta-item">
-            <span class="score-meta-val" id="resultMultiScore">38/40</span>
-            <span class="score-meta-lbl">多选得分 (10题)</span>
+            <span class="score-meta-val" id="resultMultiScore">20/20</span>
+            <span class="score-meta-lbl">多选得分 (10题·每题2分)</span>
           </div>
           <div class="score-meta-item">
             <span class="score-meta-val" id="resultWrongNum">3</span>
@@ -1646,10 +1646,10 @@
       const typeBadge = document.getElementById('qTypeBadge');
       if (q.type === 'single') {
         typeBadge.className = 'q-type-badge single';
-        typeBadge.textContent = '单选题 (2.4分)';
+        typeBadge.textContent = '单选题 (1分)';
       } else {
         typeBadge.className = 'q-type-badge multi';
-        typeBadge.textContent = '多选题 (4.0分)';
+        typeBadge.textContent = '多选题 (2分)';
       }
       document.getElementById('qChapterTag').textContent = q.chapter_title;
       document.getElementById('qStemText').textContent = `${currentIndex + 1}. ${q.stem}`;
@@ -1984,7 +1984,7 @@
       if (examTimer) clearInterval(examTimer);
       examAnswers._submitted = true;
 
-      // 计算模拟考得分 (25单选每题2.4分，10多选每题4分，满分100)
+      // 计算模拟考得分 (25单选每题1分，10多选每题2分，满分45分)
       let singleScore = 0;
       let multiScore = 0;
       let wrongNum = 0;
@@ -1993,10 +1993,10 @@
         const ans = examAnswers[q.id];
         const isOk = ans && ans.isCorrect;
         if (q.type === 'single') {
-          if (isOk) singleScore += 2.4;
+          if (isOk) singleScore += 1;
           else wrongNum++;
         } else {
-          if (isOk) multiScore += 4;
+          if (isOk) multiScore += 2;
           else wrongNum++;
         }
 
@@ -2024,18 +2024,18 @@
     function showExamResultView(totalScore, singleScore, multiScore, wrongNum) {
       switchView('viewExamResult');
 
-      document.getElementById('resultScore').textContent = totalScore;
+      document.getElementById('resultScore').innerHTML = `${totalScore} <span style="font-size:24px; color:var(--text-sub); font-weight:700;">/ 45分</span>`;
       const mins = Math.floor(examTimeElapsed / 60);
       const secs = examTimeElapsed % 60;
       document.getElementById('resultTimeUsed').textContent = `${mins}分${secs}秒`;
-      document.getElementById('resultSingleScore').textContent = `${Math.round(singleScore)}/60`;
-      document.getElementById('resultMultiScore').textContent = `${Math.round(multiScore)}/40`;
+      document.getElementById('resultSingleScore').textContent = `${singleScore}/25`;
+      document.getElementById('resultMultiScore').textContent = `${multiScore}/20`;
       document.getElementById('resultWrongNum').textContent = `${wrongNum} 题`;
 
       let feedback = '及格通过，继续查漏补缺！';
-      if (totalScore >= 95) feedback = '🏆 卓越超群！期末满分毫无悬念！';
-      else if (totalScore >= 85) feedback = '🎉 扎实优秀！再复盘一遍错题冲刺高分！';
-      else if (totalScore >= 60) feedback = '💪 顺利过线！建议重点强化攻克错题本！';
+      if (totalScore >= 42) feedback = '🏆 卓越超群！期末高分无忧！';
+      else if (totalScore >= 36) feedback = '🎉 扎实优秀！再复盘一遍错题冲刺满分！';
+      else if (totalScore >= 27) feedback = '💪 顺利及格！建议重点强化攻克错题本！';
       else feedback = '⚠️ 基础仍需巩固，建议返回各章节逐章夯实！';
       document.getElementById('resultFeedback').textContent = feedback;
 
