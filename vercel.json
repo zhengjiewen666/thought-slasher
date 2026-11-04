@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "name": "thought-slasher",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
