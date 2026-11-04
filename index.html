@@ -171,6 +171,7 @@
     .view-section {
       display: none;
       animation: fadeIn 0.2s ease;
+      overflow-x: hidden;
     }
     .view-section.active {
       display: block;
@@ -513,6 +514,11 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+      touch-action: pan-y;
+      user-select: none;
+      -webkit-user-select: none;
+      will-change: transform, opacity;
+      transform-origin: 50% 100%;
     }
 
     .q-badge-row {
@@ -3169,8 +3175,24 @@
     });
 
     // ==========================================
-    // 13. 手势与全局层级返回 (从左往右划返回上一层级)
+    // 13. 双模式动感手势交互引擎
+    // A. 屏幕左边缘从左往右划 (startX <= 48px, dx > 0) -> 整页平移滑出，返回上一层级
+    // B. 非边缘区域划动 (startX > 48px) -> 题目卡片随手指动态拖拽倾斜，松手切题：
+    //    - 从左往右划 (dx > 0) -> 切换上一题 (卡片右滑切出，上一题从左滑入)
+    //    - 从右往左划 (dx < 0) -> 切换下一题 (卡片左滑切出，下一题从右滑入)
     // ==========================================
+    function isAnyModalOpen() {
+      const ovModal = document.getElementById('overviewModal');
+      if (ovModal && ovModal.classList.contains('open')) return true;
+      const sheetModal = document.getElementById('sheetModal');
+      if (sheetModal && sheetModal.classList.contains('open')) return true;
+      const syncModal = document.getElementById('syncModal');
+      if (syncModal && syncModal.classList.contains('open')) return true;
+      const conflictModal = document.getElementById('cloudConflictModal');
+      if (conflictModal && conflictModal.classList.contains('open')) return true;
+      return false;
+    }
+
     function navigateBackLevel() {
       // 1. 若全景总览看板开启，优先关闭总览看板
       const ovModal = document.getElementById('overviewModal');
@@ -3223,115 +3245,320 @@
       return false;
     }
 
-    // 全局滑动手势监听引擎：全面支持“从左往右划”返回上一层级
-    // 兼容手机单指触摸滑动 (Touch) 与电脑端鼠标拖拽 (Pointer/Mouse)
-    let gestureStartX = 0;
-    let gestureStartY = 0;
-    let gestureStartTime = 0;
-    let gestureHandled = false;
-    let isGestureTracking = false;
+    let isTracking = false;
+    let gestureMode = null; // 'edge' | 'card' | 'scroll' | 'ignored'
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let startTime = 0;
+    let edgeTarget = null;
+    let cardTarget = null;
+    let isEdgeStart = false;
+    let isCardAnimating = false; // 防止切题动画期间并发重叠
 
-    function handleGestureStart(clientX, clientY, target) {
+    function onGestureStart(clientX, clientY, target) {
+      if (isCardAnimating) return;
       const tag = target && target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-        isGestureTracking = false;
-        return;
-      }
-      isGestureTracking = true;
-      gestureStartX = clientX;
-      gestureStartY = clientY;
-      gestureStartTime = Date.now();
-      gestureHandled = false;
-    }
-
-    function handleGestureMove(clientX, clientY) {
-      if (!isGestureTracking || gestureHandled) return;
-      const dx = clientX - gestureStartX;
-      const dy = clientY - gestureStartY;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
-
-      // 垂直滚动保护：如果垂直移动幅度明显大于水平，判定为用户在正常纵向翻看题目/解析，放弃手势拦截
-      if (absY > 30 && absY > absX * 1.5) {
-        gestureHandled = true;
-        isGestureTracking = false;
+        isTracking = false;
         return;
       }
 
-      // 核心手势：从左往右划 (dx > 0)
-      // 只要向右划动距离达到 45px，且水平移动大于垂直移动 (absX > absY * 1.1)
-      if (dx > 45 && absX > absY * 1.1) {
-        gestureHandled = true;
-        isGestureTracking = false;
-        navigateBackLevel();
-        return;
-      }
+      isTracking = true;
+      gestureMode = null;
+      startX = clientX;
+      startY = clientY;
+      lastX = clientX;
+      lastY = clientY;
+      startTime = Date.now();
 
-      // 兼顾向左滑动返回 (dx < -60)
-      if (dx < -60 && absX > absY * 1.2) {
-        gestureHandled = true;
-        isGestureTracking = false;
-        navigateBackLevel();
-        return;
-      }
-    }
+      // 判断是否从屏幕左边缘起划 (边边定义为屏幕左侧 48px 以内)
+      isEdgeStart = (startX <= 48);
 
-    function handleGestureEnd(clientX, clientY) {
-      if (!isGestureTracking || gestureHandled) {
-        isGestureTracking = false;
-        return;
-      }
-      isGestureTracking = false;
-      const dx = clientX - gestureStartX;
-      const dy = clientY - gestureStartY;
-      const dt = Date.now() - gestureStartTime;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
+      if (isEdgeStart) {
+        // 查找当前可滑出的最顶层容器
+        const ovModal = document.getElementById('overviewModal');
+        const sheetModal = document.getElementById('sheetModal');
+        const viewQuiz = document.getElementById('viewQuiz');
+        const viewExamResult = document.getElementById('viewExamResult');
 
-      // 快速轻拂 (Flick手势：500ms 内快速划过)
-      if (dt < 500 && absX > absY * 1.0) {
-        if (dx > 30 || dx < -45) {
-          gestureHandled = true;
-          navigateBackLevel();
+        if (ovModal && ovModal.classList.contains('open')) {
+          edgeTarget = ovModal.querySelector('.overview-panel');
+        } else if (sheetModal && sheetModal.classList.contains('open')) {
+          edgeTarget = sheetModal.querySelector('.sheet-panel');
+        } else if (viewQuiz && viewQuiz.classList.contains('active')) {
+          edgeTarget = viewQuiz;
+        } else if (viewExamResult && viewExamResult.classList.contains('active')) {
+          edgeTarget = viewExamResult;
+        } else {
+          edgeTarget = null;
+        }
+        cardTarget = null;
+      } else {
+        // 非边缘：在答题页面且未开弹窗时，激活题目卡片动感切题
+        edgeTarget = null;
+        const viewQuiz = document.getElementById('viewQuiz');
+        if (viewQuiz && viewQuiz.classList.contains('active') && !isAnyModalOpen()) {
+          cardTarget = viewQuiz.querySelector('.quiz-question-box');
+        } else {
+          cardTarget = null;
         }
       }
     }
 
-    // 移动端 Touch 触摸事件监听 (绑定在 document 上以捕获所有页面元素上的滑动)
+    function onGestureMove(clientX, clientY) {
+      if (!isTracking) return;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      lastX = clientX;
+      lastY = clientY;
+
+      // 1. 手势方向尚未锁定前，先进行微位移过滤与垂直滚动保护
+      if (gestureMode === null) {
+        if (Math.hypot(dx, dy) < 8) return; // 过滤轻微点触抖动
+        if (absY > absX * 1.1) {
+          // 垂直位移大于水平位移 -> 用户在正常上下翻看题目与解析，锁定为滚动
+          gestureMode = 'scroll';
+          return;
+        }
+        // 水平滑动：锁定手势模式
+        if (isEdgeStart && dx > 0 && edgeTarget) {
+          gestureMode = 'edge';
+        } else if (!isEdgeStart && cardTarget) {
+          gestureMode = 'card';
+        } else {
+          gestureMode = 'ignored';
+          return;
+        }
+      }
+
+      if (gestureMode === 'scroll' || gestureMode === 'ignored') return;
+
+      // 2. 边缘划动模式：整页/面板跟随手指由左往右平移 (translateX)
+      if (gestureMode === 'edge' && edgeTarget) {
+        const moveX = Math.max(0, dx); // 仅允许向右滑出
+        edgeTarget.style.transition = 'none';
+        edgeTarget.style.transform = `translateX(${moveX}px)`;
+        edgeTarget.style.boxShadow = '0 0 25px rgba(0, 0, 0, 0.18)';
+        return;
+      }
+
+      // 3. 非边缘卡片切题模式：卡片随手指动态拖拽（带有灵动微倾角）
+      if (gestureMode === 'card' && cardTarget) {
+        let moveX = dx;
+        // 边界弹性阻尼：第一题向右拖、或最后一题向左拖时施加 0.35 橡皮筋阻尼
+        if (currentIndex === 0 && dx > 0) {
+          moveX = dx * 0.35;
+        } else if (currentIndex >= currentQuestions.length - 1 && dx < 0) {
+          moveX = dx * 0.35;
+        }
+        const rot = moveX * 0.025; // 随位移产生自然倾角
+        cardTarget.style.transition = 'none';
+        cardTarget.style.transform = `translateX(${moveX}px) rotate(${rot}deg)`;
+        return;
+      }
+    }
+
+    function onGestureEnd(clientX, clientY) {
+      if (!isTracking) return;
+      isTracking = false;
+      const dx = lastX - startX;
+      const dt = Math.max(1, Date.now() - startTime);
+      const speed = Math.abs(dx) / dt;
+
+      // 1. 处理边缘手势释放 (返回上一层级)
+      if (gestureMode === 'edge' && edgeTarget) {
+        const passed = dx > 75 || (dx > 35 && speed > 0.35);
+        if (passed) {
+          // 平滑滑出屏幕右侧
+          edgeTarget.style.transition = 'transform 0.22s ease-out, opacity 0.2s ease-out';
+          edgeTarget.style.transform = 'translateX(100%)';
+          edgeTarget.style.opacity = '0';
+          const targetRef = edgeTarget;
+          setTimeout(() => {
+            navigateBackLevel();
+            if (targetRef) {
+              targetRef.style.transition = '';
+              targetRef.style.transform = '';
+              targetRef.style.opacity = '';
+              targetRef.style.boxShadow = '';
+            }
+          }, 220);
+        } else {
+          // 未达阈值，弹性回弹归位
+          edgeTarget.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.9, 0.4, 1.1)';
+          edgeTarget.style.transform = 'translateX(0)';
+          const targetRef = edgeTarget;
+          setTimeout(() => {
+            if (targetRef) {
+              targetRef.style.transition = '';
+              targetRef.style.transform = '';
+              targetRef.style.boxShadow = '';
+            }
+          }, 230);
+        }
+        gestureMode = null;
+        edgeTarget = null;
+        return;
+      }
+
+      // 2. 处理非边缘题目卡片拖拽释放 (切题动感)
+      if (gestureMode === 'card' && cardTarget) {
+        const targetCard = cardTarget;
+
+        // 从左往右滑 -> 切换上一题 (dx > 0)
+        if (dx > 50 || (dx > 25 && speed > 0.35)) {
+          if (currentIndex > 0) {
+            isCardAnimating = true;
+            // 当前卡片向右平滑滑出
+            targetCard.style.transition = 'transform 0.18s ease-out, opacity 0.16s ease-out';
+            targetCard.style.transform = 'translateX(120%) rotate(5deg)';
+            targetCard.style.opacity = '0';
+
+            setTimeout(() => {
+              prevQuestion();
+              // 设置新卡片初始位置在左侧屏幕外
+              targetCard.style.transition = 'none';
+              targetCard.style.transform = 'translateX(-60px) rotate(-2deg)';
+              targetCard.style.opacity = '0';
+              void targetCard.offsetWidth; // 触发回流重绘
+              // 弹性平滑滑入居中
+              targetCard.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.9, 0.4, 1.1), opacity 0.22s ease';
+              targetCard.style.transform = 'translateX(0) rotate(0deg)';
+              targetCard.style.opacity = '1';
+
+              setTimeout(() => {
+                targetCard.style.transition = '';
+                targetCard.style.transform = '';
+                targetCard.style.opacity = '';
+                isCardAnimating = false;
+              }, 250);
+            }, 180);
+          } else {
+            // 已是第一题，弹性回弹
+            targetCard.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1)';
+            targetCard.style.transform = 'translateX(0) rotate(0deg)';
+            showToast('已经是第一题啦');
+            setTimeout(() => {
+              targetCard.style.transition = '';
+              targetCard.style.transform = '';
+            }, 260);
+          }
+        }
+        // 从右往左滑 -> 切换下一题 (dx < 0)
+        else if (dx < -50 || (dx < -25 && speed > 0.35)) {
+          if (currentIndex < currentQuestions.length - 1) {
+            isCardAnimating = true;
+            // 当前卡片向左平滑滑出
+            targetCard.style.transition = 'transform 0.18s ease-out, opacity 0.16s ease-out';
+            targetCard.style.transform = 'translateX(-120%) rotate(-5deg)';
+            targetCard.style.opacity = '0';
+
+            setTimeout(() => {
+              nextQuestion();
+              // 设置新卡片初始位置在右侧屏幕外
+              targetCard.style.transition = 'none';
+              targetCard.style.transform = 'translateX(60px) rotate(2deg)';
+              targetCard.style.opacity = '0';
+              void targetCard.offsetWidth; // 触发回流重绘
+              // 弹性平滑滑入居中
+              targetCard.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.9, 0.4, 1.1), opacity 0.22s ease';
+              targetCard.style.transform = 'translateX(0) rotate(0deg)';
+              targetCard.style.opacity = '1';
+
+              setTimeout(() => {
+                targetCard.style.transition = '';
+                targetCard.style.transform = '';
+                targetCard.style.opacity = '';
+                isCardAnimating = false;
+              }, 250);
+            }, 180);
+          } else {
+            // 已是最后一题，弹性回弹
+            targetCard.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1)';
+            targetCard.style.transform = 'translateX(0) rotate(0deg)';
+            if (currentMode === 'exam') {
+              finishMockExam();
+            } else {
+              showToast('已经是最后一题了');
+            }
+            setTimeout(() => {
+              targetCard.style.transition = '';
+              targetCard.style.transform = '';
+            }, 260);
+          }
+        }
+        // 位移不足，弹性回弹至原位
+        else {
+          targetCard.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.9, 0.4, 1.1), opacity 0.2s ease';
+          targetCard.style.transform = 'translateX(0) rotate(0deg)';
+          targetCard.style.opacity = '1';
+          setTimeout(() => {
+            targetCard.style.transition = '';
+            targetCard.style.transform = '';
+            targetCard.style.opacity = '';
+          }, 230);
+        }
+
+        gestureMode = null;
+        cardTarget = null;
+        return;
+      }
+
+      gestureMode = null;
+      edgeTarget = null;
+      cardTarget = null;
+    }
+
+    // 移动端 Touch 触摸事件监听 (绑定在 document 上)
     document.addEventListener('touchstart', (e) => {
       if (!e.touches || e.touches.length !== 1) return;
-      handleGestureStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
+      onGestureStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
     }, { passive: true });
 
     document.addEventListener('touchmove', (e) => {
       if (!e.touches || e.touches.length !== 1) return;
-      handleGestureMove(e.touches[0].clientX, e.touches[0].clientY);
+      onGestureMove(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
 
     document.addEventListener('touchend', (e) => {
       if (!e.changedTouches || e.changedTouches.length !== 1) return;
-      handleGestureEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      onGestureEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }, { passive: true });
 
     document.addEventListener('touchcancel', () => {
-      isGestureTracking = false;
+      if (cardTarget) {
+        cardTarget.style.transition = 'transform 0.2s ease';
+        cardTarget.style.transform = 'translateX(0) rotate(0deg)';
+        setTimeout(() => { if (cardTarget) { cardTarget.style.transition = ''; cardTarget.style.transform = ''; } }, 200);
+      }
+      if (edgeTarget) {
+        edgeTarget.style.transition = 'transform 0.2s ease';
+        edgeTarget.style.transform = 'translateX(0)';
+        setTimeout(() => { if (edgeTarget) { edgeTarget.style.transition = ''; edgeTarget.style.transform = ''; } }, 200);
+      }
+      isTracking = false;
+      gestureMode = null;
     }, { passive: true });
 
-    // 桌面端 Pointer 鼠标拖拽与手写笔支持
+    // 桌面端 Pointer 鼠标拖拽支持 (支持在电脑端用鼠标按住向左/向右拖拽体验动感切题与返回)
     document.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'touch') return; // 移动端 touch 已经处理，防止重复
+      if (e.pointerType === 'touch') return;
       if (e.button !== 0) return; // 仅限鼠标左键拖拽
-      handleGestureStart(e.clientX, e.clientY, e.target);
+      onGestureStart(e.clientX, e.clientY, e.target);
     }, { passive: true });
 
     document.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'touch') return;
-      handleGestureMove(e.clientX, e.clientY);
+      onGestureMove(e.clientX, e.clientY);
     }, { passive: true });
 
     document.addEventListener('pointerup', (e) => {
       if (e.pointerType === 'touch') return;
-      handleGestureEnd(e.clientX, e.clientY);
+      onGestureEnd(e.clientX, e.clientY);
     }, { passive: true });
 
     // 初始化运行
