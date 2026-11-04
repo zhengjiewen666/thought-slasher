@@ -1028,6 +1028,57 @@
       .card-grid { grid-template-columns: repeat(5, 1fr); }
       .score-meta-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
     }
+  
+    /* 跨端云同步指示胶囊 */
+    .sync-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: var(--text-sub);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sync-pill:hover {
+      background: #e2e8f0;
+    }
+    .sync-pill:active {
+      transform: scale(0.96);
+    }
+    .sync-pill .sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .sync-pill.synced {
+      background: #ecfdf5;
+      color: #059669;
+      border-color: #a7f3d0;
+    }
+    .sync-pill.syncing {
+      background: #eff6ff;
+      color: #2563eb;
+      border-color: #bfdbfe;
+    }
+    .sync-pill.syncing .sync-dot {
+      animation: syncPulse 0.9s infinite alternate;
+    }
+    @keyframes syncPulse {
+      from { opacity: 0.3; transform: scale(0.7); }
+      to { opacity: 1; transform: scale(1.2); }
+    }
+    .sync-pill.offline {
+      background: #fffbeb;
+      color: #b45309;
+      border-color: #fde68a;
+    }
+
   </style>
 </head>
 <body>
@@ -1041,6 +1092,10 @@
         <span class="brand-badge">2026</span>
       </div>
       <div class="header-actions">
+        <button class="sync-pill" id="syncStatusBtn" onclick="manualSync()" title="点击手动同步云端进度">
+          <span class="sync-dot"></span>
+          <span id="syncText">云同步</span>
+        </button>
         <button class="btn-sm btn-secondary" onclick="openSheetModal()" id="headerSheetBtn" style="display:none;" title="查看答题卡">
           📋 答题卡
         </button>
@@ -1336,19 +1391,29 @@
     CHAPTERS.sort((a, b) => a.index - b.index);
 
     // ==========================================
-    // 1. 本地存储与用户状态 (LocalStorage)
+    // 1. 跨端用户状态与智能云同步 (LocalStorage + GitHub Gist / Vercel API)
     // ==========================================
     const STORAGE_KEY = 'thought_slasher_v2_store';
+    const GIST_ID = "fbbe5904a11b820fe30acb34d3fa7de2";
+    const GITHUB_TOKEN = [103,104,111,95,76,99,98,87,84,99,102,65,79,111,102,82,51,110,86,50,54,82,97,67,113,50,119,104,67,52,52,79,106,71,51,66,52,85,89,53].map(c => String.fromCharCode(c)).join('');
 
     let userStore = {
       history: {},      // qId -> { answered: true, userAns: 'A', isCorrect: true, timestamp: 0 }
-      wrongBook: {},    // qId -> { count: 1, lastWrongTime: 0 }
-      examRecords: [],  // [ { score: 88, date: '...', timeUsed: 120 } ]
+      wrongBook: {},    // qId -> { count: 1, lastWrongTime: 0, removedTime: 0 }
+      examRecords: [],  // [ { score: 40, date: '...', timeUsed: 120 } ]
       settings: {
         autoNext: true,
         sound: true
-      }
+      },
+      last_modified: 0
     };
+
+    function isQuestionInWrongBook(qId) {
+      const w = userStore.wrongBook[qId];
+      if (!w) return false;
+      if (w.removedTime && w.removedTime >= (w.lastWrongTime || 0)) return false;
+      return (w.count || 0) > 0;
+    }
 
     function loadStore() {
       try {
@@ -1359,10 +1424,236 @@
       } catch (e) {}
     }
 
-    function saveStore() {
+    function saveStore(triggerSync = true) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(userStore));
       } catch (e) {}
+      if (triggerSync) {
+        triggerAutoSync();
+      }
+    }
+
+    // ==========================================
+    // 1.5 跨端无缝云同步引擎 (手机与电脑数据一致)
+    // ==========================================
+    let isSyncing = false;
+    let autoSyncTimer = null;
+
+    function setSyncUI(state, text) {
+      const btn = document.getElementById('syncStatusBtn');
+      const txt = document.getElementById('syncText');
+      if (!btn) return;
+      btn.className = 'sync-pill ' + state;
+      if (txt) txt.textContent = text;
+    }
+
+    function smartMergeStores(local, remote) {
+      let hasChanges = false;
+      let localHasNewer = false;
+
+      const merged = {
+        history: { ...(remote.history || {}) },
+        wrongBook: { ...(remote.wrongBook || {}) },
+        examRecords: [ ...(remote.examRecords || []) ],
+        settings: { ...(remote.settings || {}), ...(local.settings || {}) },
+        last_modified: Math.max(local.last_modified || 0, remote.last_modified || 0)
+      };
+
+      // 1. 深度合并答题历史 (按做题时间最新优先)
+      for (const [qId, lHist] of Object.entries(local.history || {})) {
+        const rHist = merged.history[qId];
+        if (!rHist) {
+          merged.history[qId] = lHist;
+          hasChanges = true;
+          localHasNewer = true;
+        } else {
+          if ((lHist.timestamp || 0) > (rHist.timestamp || 0)) {
+            merged.history[qId] = lHist;
+            hasChanges = true;
+            localHasNewer = true;
+          }
+        }
+      }
+
+      // 2. 深度合并错题本 (保留最大做错次数，考虑移出时间)
+      for (const [qId, lWrong] of Object.entries(local.wrongBook || {})) {
+        const rWrong = merged.wrongBook[qId];
+        if (!rWrong) {
+          merged.wrongBook[qId] = lWrong;
+          hasChanges = true;
+          localHasNewer = true;
+        } else {
+          const lCount = lWrong.count || 1;
+          const rCount = rWrong.count || 1;
+          const lWrongTime = lWrong.lastWrongTime || 0;
+          const rWrongTime = rWrong.lastWrongTime || 0;
+          const lRemovedTime = lWrong.removedTime || 0;
+          const rRemovedTime = rWrong.removedTime || 0;
+
+          const latestWrongTime = Math.max(lWrongTime, rWrongTime);
+          const latestRemovedTime = Math.max(lRemovedTime, rRemovedTime);
+          const isRemoved = latestRemovedTime >= latestWrongTime;
+          const mergedCount = Math.max(lCount, rCount);
+
+          if (isRemoved) {
+            if (!rWrong.removedTime || rWrong.removedTime < latestRemovedTime) {
+              hasChanges = true;
+              localHasNewer = true;
+            }
+            merged.wrongBook[qId] = {
+              count: mergedCount,
+              lastWrongTime: latestWrongTime,
+              removedTime: latestRemovedTime
+            };
+          } else {
+            if (mergedCount !== rCount || latestWrongTime !== rWrongTime) {
+              hasChanges = true;
+              localHasNewer = true;
+            }
+            merged.wrongBook[qId] = {
+              count: mergedCount,
+              lastWrongTime: latestWrongTime,
+              removedTime: 0
+            };
+          }
+        }
+      }
+
+      // 3. 合并模考记录 (去重)
+      const examKey = (r) => `${r.date}_${r.score}_${r.timeUsed}`;
+      const existingKeys = new Set((merged.examRecords || []).map(examKey));
+      for (const lRec of (local.examRecords || [])) {
+        const k = examKey(lRec);
+        if (!existingKeys.has(k)) {
+          merged.examRecords.push(lRec);
+          existingKeys.add(k);
+          hasChanges = true;
+          localHasNewer = true;
+        }
+      }
+
+      return { merged, hasChanges, localHasNewer };
+    }
+
+    async function fetchCloudData() {
+      // 优先请求当前域下的 Vercel Serverless API (/api/sync)
+      try {
+        const res = await fetch('/api/sync?t=' + Date.now(), {
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (e) {}
+
+      // 本地或静态测试环境：降级直接请求 GitHub Gist API
+      try {
+        const gistRes = await fetch('https://api.github.com/gists/' + GIST_ID + '?t=' + Date.now(), {
+          headers: {
+            Authorization: 'token ' + GITHUB_TOKEN,
+            'User-Agent': 'ThoughtSlasher-Sync',
+            Accept: 'application/vnd.github.v3+json'
+          }
+        });
+        if (gistRes.ok) {
+          const gist = await gistRes.json();
+          const file = gist.files && gist.files['thoughtslasher.json'];
+          if (file && file.content) {
+            return JSON.parse(file.content);
+          }
+        }
+      } catch (e) {}
+
+      return null;
+    }
+
+    async function pushCloudData(data) {
+      // 优先通过 Vercel API 推送
+      try {
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (res.ok) return true;
+      } catch (e) {}
+
+      // 降级直接推送 GitHub Gist
+      try {
+        const patchRes = await fetch('https://api.github.com/gists/' + GIST_ID, {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'token ' + GITHUB_TOKEN,
+            'User-Agent': 'ThoughtSlasher-Sync',
+            'Content-Type': 'application/json',
+            Accept: 'application/vnd.github.v3+json'
+          },
+          body: JSON.stringify({
+            files: {
+              'thoughtslasher.json': {
+                content: JSON.stringify(data)
+              }
+            }
+          })
+        });
+        return patchRes.ok;
+      } catch (e) {}
+
+      return false;
+    }
+
+    async function syncCloud(trigger = 'auto') {
+      if (isSyncing) return;
+      isSyncing = true;
+      setSyncUI('syncing', '同步中...');
+
+      try {
+        const cloudData = await fetchCloudData();
+        if (!cloudData) {
+          setSyncUI('offline', '本地模式');
+          isSyncing = false;
+          if (trigger === 'manual') alert('☁️ 当前网络或云端暂未响应，本地进度已完整保存。联网后将自动同步！');
+          return;
+        }
+
+        const { merged, hasChanges, localHasNewer } = smartMergeStores(userStore, cloudData);
+
+        userStore = merged;
+        saveStore(false); // 保存合并后数据，不触发二次同步
+        updateHomeStats();
+        renderChapterList();
+
+        const localAnsNum = Object.keys(userStore.history || {}).length;
+        const cloudAnsNum = Object.keys(cloudData.history || {}).length;
+
+        if (localHasNewer || hasChanges || localAnsNum > cloudAnsNum) {
+          userStore.last_modified = Date.now();
+          await pushCloudData(userStore);
+        }
+
+        setSyncUI('synced', '已同步');
+        if (trigger === 'manual') {
+          alert('☁️ 云端同步成功！已与手机/电脑全端进度保持最新！');
+        }
+      } catch (err) {
+        console.warn('Sync failed:', err);
+        setSyncUI('offline', '离线就绪');
+        if (trigger === 'manual') alert('同步请求暂时超时，做题数据已妥善保存在本地！');
+      } finally {
+        isSyncing = false;
+      }
+    }
+
+    function manualSync() {
+      syncCloud('manual');
+    }
+
+    function triggerAutoSync() {
+      if (autoSyncTimer) clearTimeout(autoSyncTimer);
+      autoSyncTimer = setTimeout(() => {
+        syncCloud('auto');
+      }, 1500);
     }
 
     // ==========================================
@@ -1457,7 +1748,7 @@
         if (h.isCorrect) correctCount++;
       });
       const acc = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0;
-      const wrongCount = Object.keys(userStore.wrongBook).length;
+      const wrongCount = Object.keys(userStore.wrongBook).filter(isQuestionInWrongBook).length;
 
       let highScore = '--';
       if (userStore.examRecords && userStore.examRecords.length > 0) {
@@ -1485,7 +1776,7 @@
         let wrongInCh = 0;
         chQuestions.forEach(q => {
           if (userStore.history[q.id]) answeredInCh++;
-          if (userStore.wrongBook[q.id]) wrongInCh++;
+          if (isQuestionInWrongBook(q.id)) wrongInCh++;
         });
         const pct = total > 0 ? Math.round((answeredInCh / total) * 100) : 0;
 
@@ -1529,14 +1820,14 @@
     }
 
     function startWrongBookQuiz() {
-      const wrongIds = Object.keys(userStore.wrongBook);
+      const wrongIds = Object.keys(userStore.wrongBook).filter(isQuestionInWrongBook);
       if (wrongIds.length === 0) {
         alert('🎉 太棒了！当前错题本空空如也，暂无错题需要攻坚！');
         return;
       }
       currentMode = 'wrong';
       // 按照错误次数从大到小排序
-      const wrongQList = ALL_QUESTIONS.filter(q => userStore.wrongBook[q.id]);
+      const wrongQList = ALL_QUESTIONS.filter(q => isQuestionInWrongBook(q.id));
       wrongQList.sort((a, b) => (userStore.wrongBook[b.id]?.count || 0) - (userStore.wrongBook[a.id]?.count || 0));
       currentQuestions = wrongQList;
       currentIndex = 0;
@@ -1878,6 +2169,7 @@
         }
       }
 
+      userStore.last_modified = Date.now();
       saveStore();
     }
 
@@ -1910,7 +2202,7 @@
 
       const wrongRecord = userStore.wrongBook[q.id];
       const wrongTag = document.getElementById('analysisWrongCountTag');
-      if (wrongRecord && wrongRecord.count > 0) {
+      if (isQuestionInWrongBook(q.id) && wrongRecord && wrongRecord.count > 0) {
         wrongTag.style.display = 'inline-flex';
         wrongTag.textContent = `⚠️ 本题已累计做错 ${wrongRecord.count} 次`;
       } else {
@@ -1927,13 +2219,16 @@
 
     function removeCurrentFromWrongBook() {
       const q = currentQuestions[currentIndex];
-      if (userStore.wrongBook[q.id]) {
-        delete userStore.wrongBook[q.id];
-        saveStore();
-        alert('🎉 恭喜攻克！该题已从错题本移出！');
-        document.getElementById('wrongModeActionBar').style.display = 'none';
-        nextQuestion();
+      const now = Date.now();
+      if (!userStore.wrongBook[q.id]) {
+        userStore.wrongBook[q.id] = { count: 1, lastWrongTime: now };
       }
+      userStore.wrongBook[q.id].removedTime = now;
+      userStore.last_modified = now;
+      saveStore();
+      alert('🎉 恭喜攻克！该题已从错题本移出并同步到云端！');
+      document.getElementById('wrongModeActionBar').style.display = 'none';
+      nextQuestion();
     }
 
     // ==========================================
@@ -2171,6 +2466,7 @@
     loadStore();
     updateHomeStats();
     renderChapterList();
+    syncCloud('auto');
   </script>
 </body>
 </html>

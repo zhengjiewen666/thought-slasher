@@ -3,6 +3,6 @@
   "name": "thought-slasher",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/sync", "destination": "/api/sync.js" }
   ]
 }
