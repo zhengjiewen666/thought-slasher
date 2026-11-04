@@ -3139,6 +3139,11 @@
     // 12. 键盘快捷盲操 (PC 端极速刷题)
     // ==========================================
     window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape') {
+        navigateBackLevel();
+        return;
+      }
+
       const viewQuiz = document.getElementById('viewQuiz');
       if (!viewQuiz.classList.contains('active')) return;
 
@@ -3162,6 +3167,105 @@
         prevQuestion();
       }
     });
+
+    // ==========================================
+    // 13. 手势与全局层级返回 (左滑页面返回上一层级)
+    // ==========================================
+    function navigateBackLevel() {
+      // 1. 若全景总览看板开启，优先关闭总览看板
+      const ovModal = document.getElementById('overviewModal');
+      if (ovModal && ovModal.classList.contains('open')) {
+        closeOverviewModal();
+        showToast('👈 已返回上一层级');
+        return true;
+      }
+
+      // 2. 若答题卡弹窗开启，关闭答题卡
+      const sheetModal = document.getElementById('sheetModal');
+      if (sheetModal && sheetModal.classList.contains('open')) {
+        closeSheetModal();
+        showToast('👈 已返回上一层级');
+        return true;
+      }
+
+      // 3. 若云同步配置弹窗开启，关闭云同步弹窗
+      const syncModal = document.getElementById('syncModal');
+      if (syncModal && syncModal.classList.contains('open')) {
+        closeSyncModal();
+        return true;
+      }
+
+      // 4. 若云端冲突提示弹窗开启，关闭冲突弹窗
+      const conflictModal = document.getElementById('cloudConflictModal');
+      if (conflictModal && conflictModal.classList.contains('open')) {
+        closeCloudConflictModal();
+        return true;
+      }
+
+      // 5. 若当前在答题页面 (viewQuiz)
+      const viewQuiz = document.getElementById('viewQuiz');
+      if (viewQuiz && viewQuiz.classList.contains('active')) {
+        handleExitQuiz();
+        if (!document.getElementById('viewQuiz').classList.contains('active')) {
+          showToast('👈 已返回上一层级');
+        }
+        return true;
+      }
+
+      // 6. 若当前在模考成绩报告页 (viewExamResult)
+      const viewExamResult = document.getElementById('viewExamResult');
+      if (viewExamResult && viewExamResult.classList.contains('active')) {
+        goHome();
+        showToast('👈 已返回首页');
+        return true;
+      }
+
+      return false;
+    }
+
+    // 触摸滑动监听：支持用户“左滑页面返回上一层级”与屏幕边缘右滑返回
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+
+    window.addEventListener('touchstart', (e) => {
+      if (!e.touches || e.touches.length !== 1) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
+    }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      if (!e.changedTouches || e.changedTouches.length !== 1) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+      const deltaTime = Date.now() - touchStartTime;
+
+      // 必须在合理时间内完成手势 (不超过 650ms，避免长按选词或慢速拖动)
+      if (deltaTime > 650) return;
+
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      // 必须是明确的水平滑动：水平位移绝对值 >= 55px，且水平位移明显大于垂直位移 (absX > absY * 1.3)
+      if (absX < 55 || absX < absY * 1.3) return;
+
+      // 忽略在输入框或文本域内滑动
+      const targetTag = e.target && e.target.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
+
+      // 判定返回手势：
+      // A. 用户明确要求的“左滑页面” (向左滑动：手指由右往左，deltaX < -55)
+      // B. 兼顾用户习惯的屏幕左边缘向右划出返回手势 (touchStartX < 90 && deltaX > 55)
+      const isSwipeLeft = deltaX < -55;
+      const isSwipeRightFromEdge = deltaX > 55 && touchStartX < 90;
+
+      if (isSwipeLeft || isSwipeRightFromEdge) {
+        navigateBackLevel();
+      }
+    }, { passive: true });
 
     // 初始化运行
     loadStore();
