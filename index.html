@@ -1204,6 +1204,221 @@
     .wrong-cat-btn.cat-low .cat-label { color: #b45309; }
     .wrong-cat-btn.cat-low .cat-num { background: #fef3c7; color: #b45309; }
 
+  
+    /* 悬浮提示框 (Toast) */
+    .app-toast {
+      position: fixed;
+      bottom: 85px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(15, 23, 42, 0.94);
+      color: white;
+      padding: 9px 18px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .app-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 题库全景总览弹窗 (Overview Modal) */
+    .overview-panel {
+      background: white;
+      width: 100%;
+      max-width: 680px;
+      max-height: 85vh;
+      border-radius: 24px 24px 0 0;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px calc(16px + var(--safe-bottom));
+      box-shadow: var(--shadow-lg);
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .modal-backdrop.open .overview-panel {
+      transform: translateY(0);
+    }
+
+    .overview-stats-banner {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .overview-stat-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .overview-stat-val {
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+    .overview-stat-lbl {
+      font-size: 11px;
+      color: var(--text-sub);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .overview-filter-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .overview-filter-btn {
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: var(--text-sub);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .overview-filter-btn:hover {
+      background: #e2e8f0;
+    }
+    .overview-filter-btn.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    .overview-content-scroll {
+      overflow-y: auto;
+      max-height: 55vh;
+      padding-right: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .overview-ch-group {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .overview-ch-header {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 6px;
+    }
+
+    .overview-ch-counts {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+
+    .overview-q-cell {
+      height: 42px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+      border: 1.5px solid transparent;
+      user-select: none;
+      position: relative;
+    }
+
+    .overview-q-cell:hover {
+      transform: scale(1.08);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+      z-index: 5;
+    }
+
+    .overview-q-cell:active {
+      transform: scale(0.96);
+    }
+
+    /* 三种状态样式：绿色做对、红色做错、灰白色未做 */
+    .overview-q-cell.status-correct {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+      color: #047857;
+    }
+
+    .overview-q-cell.status-wrong {
+      background: #fef2f2;
+      border-color: #fca5a5;
+      color: #b91c1c;
+    }
+
+    .overview-q-cell.status-unanswered {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+      color: #94a3b8;
+    }
+
+    .overview-q-num {
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .overview-q-type {
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1;
+      margin-top: 1px;
+      opacity: 0.8;
+    }
+
+    @media (max-width: 600px) {
+      .overview-grid {
+        grid-template-columns: repeat(5, 1fr);
+      }
+      .overview-stats-banner {
+        grid-template-columns: repeat(3, 1fr);
+        font-size: 11px;
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -1220,6 +1435,10 @@
         <button class="sync-pill" id="syncStatusBtn" onclick="manualSync()" title="点击手动同步云端进度">
           <span class="sync-dot"></span>
           <span id="syncText">云同步</span>
+        </button>
+        <!-- 总览看板按钮：常驻导航栏，任何时候点击均可查看全库273题红绿灰总览 -->
+        <button class="btn-sm btn-secondary" onclick="openOverviewModal()" id="headerOverviewBtn" title="查看273题红绿灰全景总览看板">
+          📊 总览
         </button>
         <button class="btn-sm btn-secondary" onclick="openSheetModal()" id="headerSheetBtn" style="display:none;" title="查看答题卡">
           📋 答题卡
@@ -1260,6 +1479,12 @@
             <span class="hero-stat-num" id="statExamHighScore">--</span>
             <span class="hero-stat-lbl">模考最高分</span>
           </div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+          <span style="font-size:12px; opacity:0.85;">💡 支持自动保存各模块刷题位置，点进去自动续刷</span>
+          <button class="btn-sm btn-secondary" style="background:rgba(255,255,255,0.2); border-color:rgba(255,255,255,0.4); color:white; font-size:12px; padding:4px 12px; backdrop-filter:blur(4px);" onclick="openOverviewModal()">
+            📊 273题全景总览 (红/绿/灰) →
+          </button>
         </div>
       </div>
 
@@ -1548,12 +1773,15 @@
       history: {},      // qId -> { answered: true, userAns: 'A', isCorrect: true, timestamp: 0 }
       wrongBook: {},    // qId -> { count: 1, lastWrongTime: 0, removedTime: 0 }
       examRecords: [],  // [ { score: 40, date: '...', timeUsed: 120 } ]
+      moduleProgress: {}, // 各模块上次退出前的题号位置：moduleKey -> lastIndex
       settings: {
         autoNext: true,
         sound: true
       },
       last_modified: 0
     };
+
+    let currentModuleKey = ''; // 当前所处模块标识 (如 'chapter_1', 'mixed_order', 'wrong_high')
 
     function isQuestionInWrongBook(qId) {
       const w = userStore.wrongBook[qId];
@@ -1586,6 +1814,25 @@
     let isSyncing = false;
     let autoSyncTimer = null;
 
+        // ==========================================
+    // 2.5 交互体验增强：悬浮气泡提示 (Toast)
+    // ==========================================
+    function showToast(msg) {
+      let t = document.getElementById('appToast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'appToast';
+        t.className = 'app-toast';
+        document.body.appendChild(t);
+      }
+      t.innerHTML = `<span>💡</span> ${msg}`;
+      t.classList.add('show');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => {
+        t.classList.remove('show');
+      }, 2200);
+    }
+
     function setSyncUI(state, text) {
       const btn = document.getElementById('syncStatusBtn');
       const txt = document.getElementById('syncText');
@@ -1602,6 +1849,7 @@
         history: { ...(remote.history || {}) },
         wrongBook: { ...(remote.wrongBook || {}) },
         examRecords: [ ...(remote.examRecords || []) ],
+        moduleProgress: { ...(remote.moduleProgress || {}), ...(local.moduleProgress || {}) },
         settings: { ...(remote.settings || {}), ...(local.settings || {}) },
         last_modified: Math.max(local.last_modified || 0, remote.last_modified || 0)
       };
@@ -1955,6 +2203,7 @@
           if (isQuestionInWrongBook(q.id)) wrongInCh++;
         });
         const pct = total > 0 ? Math.round((answeredInCh / total) * 100) : 0;
+        const savedIdx = userStore.moduleProgress ? userStore.moduleProgress['chapter_' + ch.index] : 0;
 
         return `
           <div class="chapter-card" onclick="startChapterQuiz(${ch.index})">
@@ -1964,12 +2213,13 @@
                 <span>共 ${total} 题 (单选${singleNum} · 多选${multiNum})</span>
                 <span>已刷 ${answeredInCh}/${total}</span>
                 ${wrongInCh > 0 ? `<span style="color:#b91c1c; font-weight:700;">(错题 ${wrongInCh})</span>` : ''}
+                ${(savedIdx > 0 && savedIdx < total) ? `<span style="color:#2563eb; font-weight:700;">(上次练到第 ${savedIdx + 1} 题)</span>` : ''}
                 <div class="chapter-progress-bar">
                   <div class="chapter-progress-fill" style="width:${pct}%;"></div>
                 </div>
               </div>
             </div>
-            <button class="chapter-action-btn">进入刷题</button>
+            <button class="chapter-action-btn">${(savedIdx > 0 && savedIdx < total) ? `继续第 ${savedIdx + 1} 题` : '进入刷题'}</button>
           </div>
         `;
       }).join('');
@@ -1978,20 +2228,46 @@
     // ==========================================
     // 6. 刷题引擎 (各模式入口)
     // ==========================================
-    function startChapterQuiz(chIndex) {
+    function startChapterQuiz(chIndex, targetQId = null) {
       currentMode = 'chapter';
+      currentModuleKey = 'chapter_' + chIndex;
       currentQuestions = ALL_QUESTIONS.filter(q => q.chapter_index === chIndex);
-      currentIndex = 0;
+
+      if (targetQId) {
+        // 从总览指定题目跳转
+        const targetIdx = currentQuestions.findIndex(q => q.id === targetQId);
+        currentIndex = (targetIdx !== -1) ? targetIdx : 0;
+      } else {
+        // 自动恢复上次做题位置
+        const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
+        if (saved !== undefined && saved > 0 && saved < currentQuestions.length) {
+          currentIndex = saved;
+          showToast(`已为你自动恢复至上次刷题位置：第 ${currentIndex + 1} 题`);
+        } else {
+          currentIndex = 0;
+        }
+      }
+
       setupQuizSession();
     }
 
     function startAllMixedQuiz(order = 'random') {
       currentMode = 'mixed';
+      currentModuleKey = 'mixed_' + order;
       currentQuestions = [...ALL_QUESTIONS];
       if (order === 'random') {
         currentQuestions.sort(() => Math.random() - 0.5);
+        currentIndex = 0;
+      } else {
+        // 顺序连贯刷：自动记忆恢复上次练习题号！
+        const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
+        if (saved !== undefined && saved > 0 && saved < currentQuestions.length) {
+          currentIndex = saved;
+          showToast(`已为你恢复全库混刷进度：第 ${currentIndex + 1} / 273 题`);
+        } else {
+          currentIndex = 0;
+        }
       }
-      currentIndex = 0;
       setupQuizSession();
     }
 
@@ -2024,11 +2300,20 @@
       filtered.sort((a, b) => (userStore.wrongBook[b.id]?.count || 0) - (userStore.wrongBook[a.id]?.count || 0));
 
       currentMode = 'wrong';
+      currentModuleKey = 'wrong_' + category;
       currentWrongCategory = category;
       currentWrongCategoryTitle = catTitle;
       currentQuestions = filtered;
-      currentIndex = 0;
-      wrongSessionAnswers = {}; // 重置本次错题重做会话，全部题目从“未作答”干净状态开始，绝不提前剧透！
+      wrongSessionAnswers = {}; // 干净重置本次错题重练，无剧透
+
+      // 自动记忆恢复上次在该分类练习的题号
+      const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
+      if (saved !== undefined && saved > 0 && saved < currentQuestions.length) {
+        currentIndex = saved;
+        showToast(`已恢复上次错题练习位置：第 ${currentIndex + 1} 题`);
+      } else {
+        currentIndex = 0;
+      }
 
       setupQuizSession();
     }
@@ -2119,6 +2404,13 @@
       if (!currentQuestions || currentQuestions.length === 0) return;
       const q = currentQuestions[currentIndex];
       const total = currentQuestions.length;
+
+      // 实时保存用户在当前模块下的做题位置
+      if (currentModuleKey) {
+        if (!userStore.moduleProgress) userStore.moduleProgress = {};
+        userStore.moduleProgress[currentModuleKey] = currentIndex;
+        saveStore(false);
+      }
 
       // 更新顶部指示器
       document.getElementById('quizCurrentIndex').textContent = currentIndex + 1;
@@ -2640,6 +2932,133 @@
     // ==========================================
     // 10. 答题卡抽屉控制 (Sheet Modal)
     // ==========================================
+        // ==========================================
+    // 10.5 题库全景总览看板 (273 题红绿灰状态图谱)
+    // ==========================================
+    let currentOverviewFilter = 'all'; // 'all' | 'correct' | 'wrong' | 'unanswered'
+
+    function openOverviewModal() {
+      currentOverviewFilter = 'all';
+      renderOverviewGrid('all');
+      document.getElementById('overviewModal').classList.add('open');
+    }
+
+    function closeOverviewModal() {
+      document.getElementById('overviewModal').classList.remove('open');
+    }
+
+    function filterOverview(filterType) {
+      currentOverviewFilter = filterType;
+      document.querySelectorAll('.overview-filter-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtnId = (filterType === 'correct') ? 'ovBtnCorrect' :
+                          (filterType === 'wrong') ? 'ovBtnWrong' :
+                          (filterType === 'unanswered') ? 'ovBtnUnanswered' : 'ovBtnAll';
+      const activeBtn = document.getElementById(activeBtnId);
+      if (activeBtn) activeBtn.classList.add('active');
+      renderOverviewGrid(filterType);
+    }
+
+    function renderOverviewGrid(filterType = 'all') {
+      const container = document.getElementById('overviewScrollContainer');
+      if (!container) return;
+
+      // 实时统计全书 273 题三种状态数量
+      let totalCorrect = 0;
+      let totalWrong = 0;
+      let totalUnanswered = 0;
+
+      ALL_QUESTIONS.forEach(q => {
+        const h = userStore.history[q.id];
+        if (h) {
+          if (h.isCorrect) totalCorrect++;
+          else totalWrong++;
+        } else {
+          totalUnanswered++;
+        }
+      });
+
+      document.getElementById('ovCorrectCount').textContent = totalCorrect;
+      document.getElementById('ovWrongCount').textContent = totalWrong;
+      document.getElementById('ovUnansCount').textContent = totalUnanswered;
+
+      // 按 18 个章节渲染题号网格
+      let html = '';
+      CHAPTERS.forEach(ch => {
+        const chQuestions = ALL_QUESTIONS.filter(q => q.chapter_index === ch.index);
+        let chCorrect = 0;
+        let chWrong = 0;
+        let chUnans = 0;
+
+        const cellsHtml = chQuestions.map((q, idx) => {
+          const h = userStore.history[q.id];
+          let statusClass = 'status-unanswered';
+          let matchesFilter = true;
+
+          if (h) {
+            if (h.isCorrect) {
+              statusClass = 'status-correct'; // 绿色做对
+              chCorrect++;
+              if (filterType === 'wrong' || filterType === 'unanswered') matchesFilter = false;
+            } else {
+              statusClass = 'status-wrong'; // 红色做错
+              chWrong++;
+              if (filterType === 'correct' || filterType === 'unanswered') matchesFilter = false;
+            }
+          } else {
+            statusClass = 'status-unanswered'; // 灰白未做
+            chUnans++;
+            if (filterType === 'correct' || filterType === 'wrong') matchesFilter = false;
+          }
+
+          if (!matchesFilter) return '';
+
+          const typeTag = (q.type === 'single') ? '单选' : '多选';
+          return `
+            <div class="overview-q-cell ${statusClass}" onclick="jumpFromOverviewToQuestion('${q.id}')" title="${q.chapter_title} 第${idx + 1}题 (${typeTag}) - 点击立即进入">
+              <span class="overview-q-num">${idx + 1}</span>
+              <span class="overview-q-type">${typeTag}</span>
+            </div>
+          `;
+        }).filter(Boolean).join('');
+
+        // 如果在当前过滤条件下该章节有匹配的题目，则渲染该章
+        if (cellsHtml.trim().length > 0) {
+          html += `
+            <div class="overview-ch-group">
+              <div class="overview-ch-header">
+                <span>${ch.title}</span>
+                <span class="overview-ch-counts">
+                  <span style="color:#047857;">对 ${chCorrect}</span> ·
+                  <span style="color:#b91c1c;">错 ${chWrong}</span> ·
+                  <span style="color:#94a3b8;">未 ${chUnans}</span>
+                </span>
+              </div>
+              <div class="overview-grid">
+                ${cellsHtml}
+              </div>
+            </div>
+          `;
+        }
+      });
+
+      if (html.trim().length === 0) {
+        html = '<div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">当前筛选条件下暂无题目</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    function jumpFromOverviewToQuestion(qId) {
+      const q = ALL_QUESTIONS.find(item => item.id === qId);
+      if (!q) return;
+
+      closeOverviewModal();
+
+      // 跳转到对应章节及对应题号
+      startChapterQuiz(q.chapter_index, q.id);
+      showToast(`已跳入【${q.chapter_title}】第 ${currentIndex + 1} 题`);
+    }
+
     function openSheetModal() {
       const modal = document.getElementById('sheetModal');
       const container = document.getElementById('sheetGridContainer');
@@ -2750,5 +3169,51 @@
     renderChapterList();
     syncCloud('auto');
   </script>
+
+  <!-- 题库全景总览弹窗 (Overview Modal) -->
+  <div class="modal-backdrop" id="overviewModal" onclick="if(event.target===this) closeOverviewModal()">
+    <div class="overview-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">📊 题库全景总览看板 (全书 273 题)</div>
+        <button class="btn-sm btn-secondary" onclick="closeOverviewModal()" style="padding:4px 8px;">✕ 关闭</button>
+      </div>
+
+      <!-- 实时红绿灰统计条 -->
+      <div class="overview-stats-banner">
+        <div class="overview-stat-box">
+          <span class="overview-stat-val" id="ovCorrectCount" style="color:#047857;">0</span>
+          <span class="overview-stat-lbl"><span style="color:#047857;">●</span> 刷过且做对 (绿)</span>
+        </div>
+        <div class="overview-stat-box">
+          <span class="overview-stat-val" id="ovWrongCount" style="color:#b91c1c;">0</span>
+          <span class="overview-stat-lbl"><span style="color:#b91c1c;">●</span> 刷过但做错 (红)</span>
+        </div>
+        <div class="overview-stat-box">
+          <span class="overview-stat-val" id="ovUnansCount" style="color:#64748b;">273</span>
+          <span class="overview-stat-lbl"><span style="color:#94a3b8;">●</span> 尚未做过 (灰白)</span>
+        </div>
+      </div>
+
+      <!-- 快速过滤标签 -->
+      <div class="overview-filter-bar">
+        <button class="overview-filter-btn active" id="ovBtnAll" onclick="filterOverview('all')">全部 (273)</button>
+        <button class="overview-filter-btn" id="ovBtnCorrect" onclick="filterOverview('correct')">🟢 做对</button>
+        <button class="overview-filter-btn" id="ovBtnWrong" onclick="filterOverview('wrong')">🔴 做错</button>
+        <button class="overview-filter-btn" id="ovBtnUnanswered" onclick="filterOverview('unanswered')">⚪ 未做</button>
+      </div>
+
+      <!-- 章节题号滚动列表 -->
+      <div class="overview-content-scroll" id="overviewScrollContainer">
+        <!-- 动态生成 18 个章节的分组题号网格 -->
+      </div>
+
+      <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; color:var(--text-sub);">点击任意题号直接跳入该题作答/复习</span>
+        <button class="btn-sm btn-primary" onclick="closeOverviewModal()">关闭总览</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
