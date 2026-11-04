@@ -1115,6 +1115,95 @@
       transform: scale(0.96);
     }
 
+  
+    /* 错题按遍数划分网格 */
+    .wrong-cat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .wrong-cat-btn {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+
+    .wrong-cat-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    .wrong-cat-btn:active {
+      transform: scale(0.97);
+    }
+
+    .wrong-cat-btn.cat-all {
+      border-color: #cbd5e1;
+      background: #f8fafc;
+    }
+    .wrong-cat-btn.cat-all:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+
+    .wrong-cat-btn.cat-high {
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+    .wrong-cat-btn.cat-high:hover {
+      background: #fee2e2;
+    }
+
+    .wrong-cat-btn.cat-mid {
+      border-color: #fed7aa;
+      background: #fff7ed;
+    }
+    .wrong-cat-btn.cat-mid:hover {
+      background: #ffedd5;
+    }
+
+    .wrong-cat-btn.cat-low {
+      border-color: #fde68a;
+      background: #fffbeb;
+    }
+    .wrong-cat-btn.cat-low:hover {
+      background: #fef3c7;
+    }
+
+    .cat-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .cat-num {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.05);
+      color: var(--text-sub);
+    }
+
+    .wrong-cat-btn.cat-high .cat-label { color: #b91c1c; }
+    .wrong-cat-btn.cat-high .cat-num { background: #fee2e2; color: #b91c1c; }
+
+    .wrong-cat-btn.cat-mid .cat-label { color: #c2410c; }
+    .wrong-cat-btn.cat-mid .cat-num { background: #ffedd5; color: #c2410c; }
+
+    .wrong-cat-btn.cat-low .cat-label { color: #b45309; }
+    .wrong-cat-btn.cat-low .cat-num { background: #fef3c7; color: #b45309; }
+
   </style>
 </head>
 <body>
@@ -1203,16 +1292,32 @@
           </div>
         </div>
 
-        <!-- 模式三：错题攻坚本 -->
-        <div class="mode-card wrong-mode" onclick="startWrongBookQuiz()">
+        <!-- 模式三：智能错题本 (按遍数精细划分) -->
+        <div class="mode-card wrong-mode">
           <div class="mode-icon-box">📕</div>
           <div class="mode-card-title">
             <span>智能错题本</span>
             <span class="mode-card-badge red" id="badgeWrongNum">0 题待攻克</span>
           </div>
-          <div class="mode-card-desc">自动归集全部做错题目并记录做错遍数，高频错题优先攻坚，做对即可移出！</div>
-          <div style="margin-top:6px;">
-            <button class="btn-sm btn-secondary" style="font-size:12px; padding:5px 14px; color:#b91c1c; border-color:#fca5a5;">开始错题重刷</button>
+          <div class="mode-card-desc">按做错遍数分层攻坚，重刷无预透答案，做对可一键移出：</div>
+
+          <div class="wrong-cat-grid">
+            <button class="wrong-cat-btn cat-all" onclick="startWrongBookQuiz('all')" title="重刷全部错题">
+              <span class="cat-label">📚 全部错题</span>
+              <span class="cat-num" id="catCountAll">0 题</span>
+            </button>
+            <button class="wrong-cat-btn cat-high" onclick="startWrongBookQuiz('high')" title="重刷做错3次及以上的顽固错题">
+              <span class="cat-label">🔥 错 3 次及以上</span>
+              <span class="cat-num" id="catCountHigh">0 题</span>
+            </button>
+            <button class="wrong-cat-btn cat-mid" onclick="startWrongBookQuiz('mid')" title="重刷做错2次的易错题">
+              <span class="cat-label">⚠️ 错 2 次</span>
+              <span class="cat-num" id="catCountMid">0 题</span>
+            </button>
+            <button class="wrong-cat-btn cat-low" onclick="startWrongBookQuiz('low')" title="重刷做错1次的新增错题">
+              <span class="cat-label">💡 错 1 次</span>
+              <span class="cat-num" id="catCountLow">0 题</span>
+            </button>
           </div>
         </div>
 
@@ -1735,6 +1840,9 @@
     // 3. 当前运行状态管理
     // ==========================================
     let currentMode = 'chapter'; // 'chapter' | 'mixed' | 'wrong' | 'exam' | 'exam_review'
+    let currentWrongCategory = 'all'; // 'all' | 'high' | 'mid' | 'low'
+    let currentWrongCategoryTitle = '📕 全部错题重刷';
+    let wrongSessionAnswers = {}; // 错题重刷独立作答状态，确保重刷时选项干净未答、绝不提前剧透答案！
     let currentQuestions = [];
     let currentIndex = 0;
     let currentMultiSelection = new Set();
@@ -1790,7 +1898,33 @@
         if (h.isCorrect) correctCount++;
       });
       const acc = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0;
-      const wrongCount = Object.keys(userStore.wrongBook).filter(isQuestionInWrongBook).length;
+      // 错题按做错遍数精细分级统计
+      let countAll = 0;
+      let countHigh = 0; // >= 3次
+      let countMid = 0;  // == 2次
+      let countLow = 0;  // == 1次
+
+      Object.keys(userStore.wrongBook).forEach(qId => {
+        if (isQuestionInWrongBook(qId)) {
+          countAll++;
+          const times = userStore.wrongBook[qId]?.count || 1;
+          if (times >= 3) countHigh++;
+          else if (times === 2) countMid++;
+          else countLow++;
+        }
+      });
+
+      const wrongCount = countAll;
+
+      // 实时更新卡片上的分项题数徽章
+      const elAll = document.getElementById('catCountAll');
+      const elHigh = document.getElementById('catCountHigh');
+      const elMid = document.getElementById('catCountMid');
+      const elLow = document.getElementById('catCountLow');
+      if (elAll) elAll.textContent = `${countAll} 题`;
+      if (elHigh) elHigh.textContent = `${countHigh} 题`;
+      if (elMid) elMid.textContent = `${countMid} 题`;
+      if (elLow) elLow.textContent = `${countLow} 题`;
 
       let highScore = '--';
       if (userStore.examRecords && userStore.examRecords.length > 0) {
@@ -1861,18 +1995,41 @@
       setupQuizSession();
     }
 
-    function startWrongBookQuiz() {
-      const wrongIds = Object.keys(userStore.wrongBook).filter(isQuestionInWrongBook);
-      if (wrongIds.length === 0) {
-        alert('🎉 太棒了！当前错题本空空如也，暂无错题需要攻坚！');
+    function startWrongBookQuiz(category = 'all') {
+      const activeWrongQuestions = ALL_QUESTIONS.filter(q => isQuestionInWrongBook(q.id));
+
+      let filtered = [];
+      let catTitle = '全部错题重刷';
+
+      if (category === 'high') {
+        filtered = activeWrongQuestions.filter(q => (userStore.wrongBook[q.id]?.count || 1) >= 3);
+        catTitle = '🔥 错3次+顽固错题';
+      } else if (category === 'mid') {
+        filtered = activeWrongQuestions.filter(q => (userStore.wrongBook[q.id]?.count || 1) === 2);
+        catTitle = '⚠️ 错2次中度错题';
+      } else if (category === 'low') {
+        filtered = activeWrongQuestions.filter(q => (userStore.wrongBook[q.id]?.count || 1) === 1);
+        catTitle = '💡 错1次待巩固题';
+      } else {
+        filtered = activeWrongQuestions;
+        catTitle = '📕 全部错题重刷';
+      }
+
+      if (filtered.length === 0) {
+        alert(`🎉 恭喜！当前【${catTitle}】暂无错题需要攻坚！`);
         return;
       }
+
+      // 按照错误次数从大到小降序排序，高频死角优先攻克
+      filtered.sort((a, b) => (userStore.wrongBook[b.id]?.count || 0) - (userStore.wrongBook[a.id]?.count || 0));
+
       currentMode = 'wrong';
-      // 按照错误次数从大到小排序
-      const wrongQList = ALL_QUESTIONS.filter(q => isQuestionInWrongBook(q.id));
-      wrongQList.sort((a, b) => (userStore.wrongBook[b.id]?.count || 0) - (userStore.wrongBook[a.id]?.count || 0));
-      currentQuestions = wrongQList;
+      currentWrongCategory = category;
+      currentWrongCategoryTitle = catTitle;
+      currentQuestions = filtered;
       currentIndex = 0;
+      wrongSessionAnswers = {}; // 重置本次错题重做会话，全部题目从“未作答”干净状态开始，绝不提前剧透！
+
       setupQuizSession();
     }
 
@@ -1969,7 +2126,7 @@
 
       let modeTitle = '章节刷题';
       if (currentMode === 'mixed') modeTitle = '🔀 全库混刷';
-      else if (currentMode === 'wrong') modeTitle = '📕 错题攻坚';
+      else if (currentMode === 'wrong') modeTitle = currentWrongCategoryTitle || '📕 错题攻坚';
       else if (currentMode === 'exam') modeTitle = '⏱️ 全真模考';
       else if (currentMode === 'exam_review') modeTitle = '🔍 模考复盘';
       else modeTitle = q.chapter_title;
@@ -1987,12 +2144,14 @@
       document.getElementById('qChapterTag').textContent = q.chapter_title;
       document.getElementById('qStemText').textContent = `${currentIndex + 1}. ${q.stem}`;
 
-      // 获取当前题目的作答记录
+      // 获取当前题目的作答记录 (错题重刷读取独立会话，未作答时不提前剧透答案)
       let answeredRecord = null;
       if (currentMode === 'exam') {
         answeredRecord = examAnswers[q.id] || null;
       } else if (currentMode === 'exam_review') {
         answeredRecord = examAnswers[q.id] || { userAns: '未作答', isCorrect: false };
+      } else if (currentMode === 'wrong') {
+        answeredRecord = wrongSessionAnswers[q.id] || null;
       } else {
         answeredRecord = userStore.history[q.id] || null;
       }
@@ -2107,8 +2266,26 @@
             if (el) el.classList.add('selected-multi');
           }
         }
+      } else if (currentMode === 'wrong') {
+        // ================= 错题重刷模式 (以本次重刷会话判断是否已答) =================
+        if (wrongSessionAnswers[q.id]) {
+          return; // 本次错题重刷中已答过则锁定
+        }
+
+        if (q.type === 'single') {
+          judgeSingleAnswer(optKey);
+        } else {
+          const el = document.getElementById('opt_' + optKey);
+          if (currentMultiSelection.has(optKey)) {
+            currentMultiSelection.delete(optKey);
+            if (el) el.classList.remove('selected-multi');
+          } else {
+            currentMultiSelection.add(optKey);
+            if (el) el.classList.add('selected-multi');
+          }
+        }
       } else {
-        // ================= 常规驾考模式 (即选即判) =================
+        // ================= 常规章节与全库刷题 =================
         if (userStore.history[q.id]) {
           return; // 已答过不可更改
         }
@@ -2116,7 +2293,6 @@
         if (q.type === 'single') {
           judgeSingleAnswer(optKey);
         } else {
-          // 多选勾选
           const el = document.getElementById('opt_' + optKey);
           if (currentMultiSelection.has(optKey)) {
             currentMultiSelection.delete(optKey);
@@ -2130,10 +2306,15 @@
     }
 
     function judgeSingleAnswer(userAns) {
-      const actionBar = document.getElementById('quizActionBar');
-      if (actionBar) actionBar.style.display = 'none';
       const q = currentQuestions[currentIndex];
       const isCorrect = (userAns === q.answer);
+
+      const actionBar = document.getElementById('quizActionBar');
+      if (actionBar) actionBar.style.display = 'none';
+
+      if (currentMode === 'wrong') {
+        wrongSessionAnswers[q.id] = { userAns, isCorrect };
+      }
 
       // 记录到用户存储
       recordAnswerResult(q, userAns, isCorrect);
@@ -2149,7 +2330,7 @@
 
       // 答对自动下一题
       const autoNext = document.getElementById('autoNextToggle').checked;
-      if (isCorrect && autoNext && currentIndex < currentQuestions.length - 1) {
+      if (isCorrect && autoNext && currentMode !== 'wrong' && currentIndex < currentQuestions.length - 1) {
         setTimeout(() => {
           nextQuestion();
         }, 850);
@@ -2184,13 +2365,16 @@
       } else {
         // 常规刷题
         const actionBar = document.getElementById('quizActionBar'); if (actionBar) actionBar.style.display = 'none';
+        if (currentMode === 'wrong') {
+          wrongSessionAnswers[q.id] = { userAns, isCorrect };
+        }
         recordAnswerResult(q, userAns, isCorrect);
         playSound(isCorrect ? 'correct' : 'wrong');
         markAnsweredUI(q, userAns, isCorrect);
         showAnalysis(q, userAns, isCorrect);
 
         const autoNext = document.getElementById('autoNextToggle').checked;
-        if (isCorrect && autoNext && currentIndex < currentQuestions.length - 1) {
+        if (isCorrect && autoNext && currentMode !== 'wrong' && currentIndex < currentQuestions.length - 1) {
           setTimeout(() => {
             nextQuestion();
           }, 1050);
@@ -2239,8 +2423,13 @@
         return;
       }
 
-      // 常规刷题模式：已作答则忽略
-      if (userStore.history[q.id]) return;
+      // 检查当前模式是否已作答
+      if (currentMode === 'wrong') {
+        if (wrongSessionAnswers[q.id]) return;
+        wrongSessionAnswers[q.id] = { userAns: '我不会', isCorrect: false };
+      } else {
+        if (userStore.history[q.id]) return;
+      }
 
       const userAns = '我不会';
       const isCorrect = false;
@@ -2476,6 +2665,9 @@
         } else if (currentMode === 'exam_review') {
           const ans = examAnswers[q.id];
           stateClass = (ans && ans.isCorrect) ? 'done-correct' : 'done-wrong';
+        } else if (currentMode === 'wrong') {
+          const h = wrongSessionAnswers[q.id];
+          if (h) stateClass = h.isCorrect ? 'done-correct' : 'done-wrong';
         } else {
           const h = userStore.history[q.id];
           if (h) stateClass = h.isCorrect ? 'done-correct' : 'done-wrong';
