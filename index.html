@@ -1079,6 +1079,42 @@
       border-color: #fde68a;
     }
 
+  
+    /* 答题操作栏与“我不会”按钮 */
+    .quiz-action-bar {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn-dont-know {
+      background: #f8fafc;
+      border: 1.5px dashed #cbd5e1;
+      color: #64748b;
+      padding: 9px 16px;
+      font-size: 13.5px;
+      font-weight: 700;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+
+    .btn-dont-know:hover {
+      background: #fef2f2;
+      border-color: #fca5a5;
+      color: #b91c1c;
+    }
+
+    .btn-dont-know:active {
+      transform: scale(0.96);
+    }
+
   </style>
 </head>
 <body>
@@ -1248,9 +1284,14 @@
           <!-- 动态渲染选项 -->
         </div>
 
-        <!-- 多选题提交按钮栏 -->
-        <div class="multi-submit-bar" id="multiSubmitBar" style="display:none;">
-          <button class="btn-multi-submit" onclick="submitMultiAnswer()">确认提交答案</button>
+        <!-- 答题操作栏 (“我不会”与“确认提交”) -->
+        <div class="quiz-action-bar" id="quizActionBar">
+          <button class="btn-dont-know" id="btnDontKnow" onclick="handleDontKnow()">
+            🤷 我不会 (直接看解析)
+          </button>
+          <button class="btn-multi-submit" id="btnMultiSubmit" onclick="submitMultiAnswer()" style="display:none;">
+            确认提交多选
+          </button>
         </div>
 
         <!-- 详细解析卡片 (答完即滑出) -->
@@ -1298,6 +1339,7 @@
       <div class="pc-kbd-bar">
         <span>⌨️ 键盘快捷盲操：</span>
         <span><span class="kbd">A</span> / <span class="kbd">B</span> / <span class="kbd">C</span> / <span class="kbd">D</span> 选选项</span>
+        <span><span class="kbd">W</span> 我不会</span>
         <span><span class="kbd">Enter</span> 提交多选 / 下一题</span>
         <span><span class="kbd">←</span> / <span class="kbd">→</span> 切换题目</span>
       </div>
@@ -1968,16 +2010,19 @@
         </div>
       `).join('');
 
-      // 控制多选题提交栏显隐
-      const multiBar = document.getElementById('multiSubmitBar');
-      if (currentMode === 'exam') {
-        // 模考中未提交多选题时显示提交按钮
-        multiBar.style.display = (q.type === 'multiple' && !hasAnswered) ? 'flex' : 'none';
-      } else if (currentMode === 'exam_review') {
-        multiBar.style.display = 'none';
+      // 控制“我不会”与多选题提交栏显隐
+      const actionBar = document.getElementById('quizActionBar');
+      const btnDontKnow = document.getElementById('btnDontKnow');
+      const btnMultiSubmit = document.getElementById('btnMultiSubmit');
+
+      if (hasAnswered || currentMode === 'exam_review') {
+        if (actionBar) actionBar.style.display = 'none';
       } else {
-        // 常规刷题
-        multiBar.style.display = (q.type === 'multiple' && !hasAnswered) ? 'flex' : 'none';
+        if (actionBar) actionBar.style.display = 'flex';
+        if (btnDontKnow) btnDontKnow.style.display = 'inline-flex';
+        if (btnMultiSubmit) {
+          btnMultiSubmit.style.display = (q.type === 'multiple') ? 'inline-flex' : 'none';
+        }
       }
 
       // 控制解析卡片与高亮
@@ -2085,6 +2130,8 @@
     }
 
     function judgeSingleAnswer(userAns) {
+      const actionBar = document.getElementById('quizActionBar');
+      if (actionBar) actionBar.style.display = 'none';
       const q = currentQuestions[currentIndex];
       const isCorrect = (userAns === q.answer);
 
@@ -2122,7 +2169,7 @@
       if (currentMode === 'exam') {
         // 模考记录
         examAnswers[q.id] = { userAns: userAns, isCorrect: isCorrect };
-        document.getElementById('multiSubmitBar').style.display = 'none';
+        const actionBar = document.getElementById('quizActionBar'); if (actionBar) actionBar.style.display = 'none';
         // 模考多选选中高亮
         q.options.forEach(opt => {
           const el = document.getElementById('opt_' + opt.key);
@@ -2136,7 +2183,7 @@
         }
       } else {
         // 常规刷题
-        document.getElementById('multiSubmitBar').style.display = 'none';
+        const actionBar = document.getElementById('quizActionBar'); if (actionBar) actionBar.style.display = 'none';
         recordAnswerResult(q, userAns, isCorrect);
         playSound(isCorrect ? 'correct' : 'wrong');
         markAnsweredUI(q, userAns, isCorrect);
@@ -2173,9 +2220,45 @@
       saveStore();
     }
 
+        // ==========================================
+    // 8.5 “我不会”专属处理逻辑
+    // ==========================================
+    function handleDontKnow() {
+      const q = currentQuestions[currentIndex];
+
+      if (currentMode === 'exam_review') return;
+
+      if (currentMode === 'exam') {
+        // 模考模式下标记为放弃/我不会
+        examAnswers[q.id] = { userAns: '我不会', isCorrect: false };
+        if (currentIndex < currentQuestions.length - 1) {
+          setTimeout(() => { nextQuestion(); }, 250);
+        } else {
+          renderCurrentQuestion();
+        }
+        return;
+      }
+
+      // 常规刷题模式：已作答则忽略
+      if (userStore.history[q.id]) return;
+
+      const userAns = '我不会';
+      const isCorrect = false;
+
+      // 隐藏答题操作栏
+      const actionBar = document.getElementById('quizActionBar');
+      if (actionBar) actionBar.style.display = 'none';
+
+      // 记入错题库
+      recordAnswerResult(q, userAns, isCorrect);
+      playSound('wrong');
+      markAnsweredUI(q, userAns, isCorrect);
+      showAnalysis(q, userAns, isCorrect);
+    }
+
     function markAnsweredUI(q, userAns, isCorrect) {
       const correctSet = new Set(q.answer.split(''));
-      const userSet = new Set(userAns.split(''));
+      const userSet = new Set(userAns === '我不会' ? [] : userAns.split(''));
 
       q.options.forEach(opt => {
         const el = document.getElementById('opt_' + opt.key);
@@ -2187,7 +2270,7 @@
         } else if (!correctSet.has(opt.key) && userSet.has(opt.key)) {
           el.classList.add('state-wrong');
         } else if (correctSet.has(opt.key) && !userSet.has(opt.key)) {
-          el.classList.add(q.type === 'multiple' ? 'state-missed' : 'state-correct');
+          el.classList.add((q.type === 'multiple' && userAns !== '我不会') ? 'state-missed' : 'state-correct');
         }
       });
     }
@@ -2197,7 +2280,11 @@
       card.classList.add('visible');
 
       document.getElementById('analysisCorrectAns').textContent = `正确答案：${q.answer}`;
-      document.getElementById('analysisUserAns').textContent = `你的选择：${userAns} (${isCorrect ? '回答正确 ✓' : '回答错误 ✕'})`;
+      if (userAns === '我不会') {
+        document.getElementById('analysisUserAns').textContent = '你的选择：🤷 我不会 (已收入错题本 ✕)';
+      } else {
+        document.getElementById('analysisUserAns').textContent = `你的选择：${userAns} (${isCorrect ? '回答正确 ✓' : '回答错误 ✕'})`;
+      }
       document.getElementById('analysisUserAns').style.color = isCorrect ? '#047857' : '#b91c1c';
 
       const wrongRecord = userStore.wrongBook[q.id];
@@ -2446,6 +2533,9 @@
 
       const key = e.key.toUpperCase();
       if (['A', 'B', 'C', 'D', 'E'].includes(key)) {
+        handleOptionClick(key);
+      } else if (key === 'W' || e.key === '?') {
+        handleDontKnow();
         handleOptionClick(key);
       } else if (e.code === 'Enter') {
         const q = currentQuestions[currentIndex];
