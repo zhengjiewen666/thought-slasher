@@ -1277,6 +1277,65 @@
       font-size: 13px;
     }
 
+    /* 错题核心双模式切换：背诵 vs 重练 */
+    .wrong-mode-switcher {
+      display: flex;
+      background: #f1f5f9;
+      border-radius: 10px;
+      padding: 3px;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .wrong-tab-btn {
+      flex: 1;
+      padding: 7px 10px;
+      font-size: 13px;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .wrong-tab-btn.active {
+      background: white;
+      color: #b91c1c;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+    .btn-recite-ch {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-recite-ch:hover {
+      background: #dbeafe;
+    }
+    .btn-mode-toggle {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-mode-toggle.practice {
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
     /* 错题按章节分类攻坚样式 */
     .wrong-chapter-panel {
       margin-top: 14px;
@@ -1660,7 +1719,19 @@
             <span>智能错题本</span>
             <span class="mode-card-badge red" id="badgeWrongNum">0 题待攻克</span>
           </div>
-          <div class="mode-card-desc">按做错遍数分层攻坚，重刷无预透答案，做对可一键移出：</div>
+
+          <!-- 错题核心双模式切换：直接看答案背诵 vs 隐藏答案重练 -->
+          <div class="wrong-mode-switcher">
+            <button class="wrong-tab-btn active" id="tabWrongRecite" onclick="setWrongStudyMode('recite')">
+              📖 直接看答案背诵
+            </button>
+            <button class="wrong-tab-btn" id="tabWrongPractice" onclick="setWrongStudyMode('practice')">
+              ✍️ 隐藏答案闭卷重练
+            </button>
+          </div>
+          <div class="mode-card-desc" id="wrongModeDesc">
+            💡 答案、深度解析与各选项逐项剖析完全展示，无需作答直接高效背诵！
+          </div>
 
           <div class="wrong-cat-grid">
             <button class="wrong-cat-btn cat-all" onclick="startWrongBookQuiz('all')" title="重刷全部错题">
@@ -1732,6 +1803,10 @@
           <!-- 模考交卷按钮 -->
           <button class="btn-sm btn-primary" id="btnExamSubmit" onclick="finishMockExam()" style="display:none; background:#15803d; font-size:12px; padding:4px 10px;">
             🏁 交卷
+          </button>
+          <!-- 错题即时模式切换按钮：背题模式 / 做题模式 -->
+          <button class="btn-sm btn-mode-toggle" id="btnQuizModeToggle" onclick="toggleQuizReciteMode()" style="display:none; font-size:12px; padding:4px 10px;">
+            📖 切为背题
           </button>
           <!-- 常规刷题自动下一题选项 -->
           <label id="autoNextToggleLabel" style="font-size:12px; color:var(--text-sub); display:flex; align-items:center; gap:4px; cursor:pointer;" title="答对自动切下一题">
@@ -1934,6 +2009,61 @@
     };
 
     let currentModuleKey = ''; // 当前所处模块标识 (如 'chapter_1', 'mixed_order', 'wrong_high')
+    let currentWrongStudyMode = 'recite'; // 错题模块当前学习模式：'recite' (直接看答案背诵) | 'practice' (闭卷重练)
+    let isReciteMode = false; // 当前正在进行的刷题会话是否处于“背诵模式”
+
+    function setWrongStudyMode(mode) {
+      currentWrongStudyMode = mode;
+      isReciteMode = (mode === 'recite');
+      if (userStore.settings) userStore.settings.wrongStudyMode = mode;
+      saveStore(false);
+
+      const tabRecite = document.getElementById('tabWrongRecite');
+      const tabPractice = document.getElementById('tabWrongPractice');
+      const desc = document.getElementById('wrongModeDesc');
+
+      if (mode === 'recite') {
+        if (tabRecite) tabRecite.classList.add('active');
+        if (tabPractice) tabPractice.classList.remove('active');
+        if (desc) desc.textContent = '💡 答案、深度解析与各选项逐项剖析完全呈现，无需作答直接高效背诵！';
+      } else {
+        if (tabRecite) tabRecite.classList.remove('active');
+        if (tabPractice) tabPractice.classList.add('active');
+        if (desc) desc.textContent = '💡 闭卷实测，答案与解析隐藏，真实重刷自测，做对可一键移出错题本！';
+      }
+    }
+
+    function updateQuizModeToggleBtn() {
+      const btnToggle = document.getElementById('btnQuizModeToggle');
+      if (!btnToggle) return;
+      if (isReciteMode) {
+        btnToggle.textContent = '✍️ 切为做题模式';
+        btnToggle.className = 'btn-sm btn-mode-toggle practice';
+        btnToggle.title = '当前为背题模式(答案全显)，点击切为隐藏答案闭卷自测';
+      } else {
+        btnToggle.textContent = '📖 切为背题模式';
+        btnToggle.className = 'btn-sm btn-mode-toggle';
+        btnToggle.title = '当前为做题模式(答案隐藏)，点击切为直接显示答案背诵';
+      }
+    }
+
+    function toggleQuizReciteMode() {
+      isReciteMode = !isReciteMode;
+      currentWrongStudyMode = isReciteMode ? 'recite' : 'practice';
+      if (userStore.settings) userStore.settings.wrongStudyMode = currentWrongStudyMode;
+      saveStore(false);
+      updateQuizModeToggleBtn();
+
+      // 更新顶部模式标题
+      if (currentMode === 'wrong') {
+        let base = currentWrongCategoryTitle.replace(/^[📖✍️]\s*/, '').replace(/ \(背诵模式\)| \(重练模式\)| · 错题背诵| · 错题突破/, '');
+        currentWrongCategoryTitle = (isReciteMode ? '📖 ' : '✍️ ') + base + (isReciteMode ? ' · 错题背诵' : ' · 错题突破');
+        document.getElementById('quizModeLabel').textContent = currentWrongCategoryTitle;
+      }
+
+      showToast(isReciteMode ? '已切换为：📖 错题背诵模式 (答案与解析全显)' : '已切换为：✍️ 错题做题模式 (隐藏答案闭卷自测)');
+      renderCurrentQuestion();
+    }
 
     function isQuestionInWrongBook(qId) {
       const w = userStore.wrongBook[qId];
@@ -1947,6 +2077,9 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           userStore = Object.assign(userStore, JSON.parse(raw));
+          if (userStore.settings && userStore.settings.wrongStudyMode) {
+            currentWrongStudyMode = userStore.settings.wrongStudyMode;
+          }
         }
       } catch (e) {}
     }
@@ -2396,15 +2529,23 @@
             </div>
             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
               <button class="chapter-action-btn">${(!isCompleted && savedIdx > 0 && savedIdx < total) ? `继续第 ${savedIdx + 1} 题` : (isCompleted ? '重新复习' : '进入刷题')}</button>
-              ${wrongInCh > 0 ? `<button class="btn-wrong-ch" onclick="event.stopPropagation(); startChapterWrongQuiz(${ch.index})" title="只练本章错题">📕 专刷本章错题 (${wrongInCh})</button>` : ''}
+              ${wrongInCh > 0 ? `
+                <div style="display:flex; gap:4px; margin-top:2px;">
+                  <button class="btn-recite-ch" onclick="event.stopPropagation(); startChapterWrongQuiz(${ch.index}, 'recite')" title="直接看答案背诵本章错题">📖 背错题 (${wrongInCh})</button>
+                  <button class="btn-wrong-ch" onclick="event.stopPropagation(); startChapterWrongQuiz(${ch.index}, 'practice')" title="隐藏答案重做本章错题">✍️ 练错题 (${wrongInCh})</button>
+                </div>
+              ` : ''}
             </div>
           </div>
         `;
       }).join('');
     }
 
-    // 专属章节错题重刷入口 (按章节分类精准攻坚)
-    function startChapterWrongQuiz(chIndex) {
+    // 专属章节错题重刷/背诵入口 (支持直接背诵与闭卷重刷)
+    function startChapterWrongQuiz(chIndex, explicitMode = null) {
+      const mode = explicitMode || currentWrongStudyMode;
+      isReciteMode = (mode === 'recite');
+
       const ch = CHAPTERS.find(c => c.index === chIndex);
       if (!ch) return;
       const chWrong = ALL_QUESTIONS.filter(q => q.chapter_index === chIndex && isQuestionInWrongBook(q.id));
@@ -2414,10 +2555,10 @@
       }
 
       currentMode = 'wrong';
-      currentModuleKey = 'wrong_chapter_' + chIndex;
-      currentWrongCategoryTitle = `📕 ${ch.title} · 错题专攻`;
+      currentModuleKey = 'wrong_chapter_' + chIndex + (isReciteMode ? '_recite' : '_practice');
+      currentWrongCategoryTitle = (isReciteMode ? '📖 ' : '✍️ ') + ch.title + (isReciteMode ? ' · 错题背诵' : ' · 错题突破');
       currentQuestions = chWrong;
-      wrongSessionAnswers = {}; // 重置本次会话，防止提前剧透
+      wrongSessionAnswers = {}; // 重置本次重刷会话
 
       const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
       if (saved !== undefined && saved > 0 && saved < currentQuestions.length) {
@@ -2476,24 +2617,27 @@
       setupQuizSession();
     }
 
-    function startWrongBookQuiz(category = 'all') {
+    function startWrongBookQuiz(category = 'all', explicitMode = null) {
+      const mode = explicitMode || currentWrongStudyMode;
+      isReciteMode = (mode === 'recite');
+
       const activeWrongQuestions = ALL_QUESTIONS.filter(q => isQuestionInWrongBook(q.id));
 
       let filtered = [];
-      let catTitle = '全部错题重刷';
+      let catTitle = '全部错题';
 
       if (category === 'high') {
         filtered = activeWrongQuestions.filter(q => (userStore.wrongBook[q.id]?.count || 1) >= 3);
         catTitle = '🔥 错3次+顽固错题';
       } else if (category === 'mid') {
         filtered = activeWrongQuestions.filter(q => (userStore.wrongBook[q.id]?.count || 1) === 2);
-        catTitle = '⚠️ 错2次中度错题';
+        catTitle = '⚠️ 错2次易错题';
       } else if (category === 'low') {
         filtered = activeWrongQuestions.filter(q => (userStore.wrongBook[q.id]?.count || 1) === 1);
-        catTitle = '💡 错1次待巩固题';
+        catTitle = '💡 错1次新增题';
       } else {
         filtered = activeWrongQuestions;
-        catTitle = '📕 全部错题重刷';
+        catTitle = '📕 全部错题';
       }
 
       if (filtered.length === 0) {
@@ -2505,17 +2649,17 @@
       filtered.sort((a, b) => (userStore.wrongBook[b.id]?.count || 0) - (userStore.wrongBook[a.id]?.count || 0));
 
       currentMode = 'wrong';
-      currentModuleKey = 'wrong_' + category;
+      currentModuleKey = 'wrong_' + category + (isReciteMode ? '_recite' : '_practice');
       currentWrongCategory = category;
-      currentWrongCategoryTitle = catTitle;
+      currentWrongCategoryTitle = (isReciteMode ? '📖 ' : '✍️ ') + catTitle + (isReciteMode ? ' (背诵模式)' : ' (重练模式)');
       currentQuestions = filtered;
-      wrongSessionAnswers = {}; // 干净重置本次错题重练，无剧透
+      wrongSessionAnswers = {}; // 重置本次错题重练会话
 
-      // 自动记忆恢复上次在该分类练习的题号
+      // 自动记忆恢复上次在指定分类下的刷题位置
       const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
       if (saved !== undefined && saved > 0 && saved < currentQuestions.length) {
         currentIndex = saved;
-        showToast(`已恢复上次错题练习位置：第 ${currentIndex + 1} 题`);
+        showToast(`已为你自动恢复至上次进度：第 ${currentIndex + 1} 题`);
       } else {
         currentIndex = 0;
       }
@@ -2593,11 +2737,21 @@
     function setupQuizSession() {
       switchView('viewQuiz');
 
-      // 控制导航栏中模考控件显隐
+      // 控制导航栏中模考与背题控件显隐
       const isExam = currentMode === 'exam';
       document.getElementById('examTimerDisplay').style.display = isExam ? 'inline-block' : 'none';
       document.getElementById('btnExamSubmit').style.display = isExam ? 'inline-flex' : 'none';
       document.getElementById('autoNextToggleLabel').style.display = isExam ? 'none' : 'flex';
+
+      const btnToggle = document.getElementById('btnQuizModeToggle');
+      if (btnToggle) {
+        if (currentMode === 'wrong') {
+          btnToggle.style.display = 'inline-flex';
+          updateQuizModeToggleBtn();
+        } else {
+          btnToggle.style.display = 'none';
+        }
+      }
 
       renderCurrentQuestion();
     }
@@ -2655,23 +2809,34 @@
 
       const hasAnswered = !!answeredRecord;
 
-      // 渲染选项列表
+      // 渲染选项列表 (背诵模式直接标记正确答案并标绿)
       const optionsContainer = document.getElementById('optionsContainer');
       currentMultiSelection.clear();
 
-      optionsContainer.innerHTML = q.options.map(opt => `
-        <div class="option-item" id="opt_${opt.key}" onclick="handleOptionClick('${opt.key}')">
-          <span class="option-key">${opt.key}</span>
-          <span class="option-text">${opt.text}</span>
-        </div>
-      `).join('');
+      const inRecite = (isReciteMode && currentMode === 'wrong');
+
+      optionsContainer.innerHTML = q.options.map(opt => {
+        const isCorrectOpt = q.answer.includes(opt.key);
+        let extraClass = '';
+        let extraTag = '';
+        if (inRecite && isCorrectOpt) {
+          extraClass = 'correct';
+          extraTag = '<strong style="color:#059669; margin-left:6px; font-size:12px;">✓ 正确答案</strong>';
+        }
+        return `
+          <div class="option-item ${extraClass}" id="opt_${opt.key}" onclick="handleOptionClick('${opt.key}')">
+            <span class="option-key">${opt.key}</span>
+            <span class="option-text">${opt.text} ${extraTag}</span>
+          </div>
+        `;
+      }).join('');
 
       // 控制“我不会”与多选题提交栏显隐
       const actionBar = document.getElementById('quizActionBar');
       const btnDontKnow = document.getElementById('btnDontKnow');
       const btnMultiSubmit = document.getElementById('btnMultiSubmit');
 
-      if (hasAnswered || currentMode === 'exam_review') {
+      if (inRecite || hasAnswered || currentMode === 'exam_review') {
         if (actionBar) actionBar.style.display = 'none';
       } else {
         if (actionBar) actionBar.style.display = 'flex';
@@ -2697,8 +2862,11 @@
           });
         }
       } else {
-        // 常规刷题模式 或 模考复盘模式：即选即判并展示解析
-        if (hasAnswered) {
+        // 常规刷题模式 或 错题突破 或 模考复盘
+        if (inRecite) {
+          // 错题背诵模式：直接展示正确答案与全套深度解析、选项辨析
+          showAnalysis(q, '背诵模式', true);
+        } else if (hasAnswered) {
           showAnalysis(q, answeredRecord.userAns, answeredRecord.isCorrect);
           markAnsweredUI(q, answeredRecord.userAns, answeredRecord.isCorrect);
         } else {
@@ -2726,6 +2894,10 @@
     // 8. 用户点击选项与判分 (驾考即选即判)
     // ==========================================
     function handleOptionClick(optKey) {
+      if (isReciteMode && currentMode === 'wrong') {
+        showToast('💡 当前为背题模式，答案与解析已完全呈现。若要自测可点击右上角“✍️ 切为做题模式”');
+        return;
+      }
       const q = currentQuestions[currentIndex];
 
       if (currentMode === 'exam_review') {
@@ -3796,6 +3968,7 @@
 
     // 初始化运行
     loadStore();
+    setWrongStudyMode(currentWrongStudyMode);
     updateHomeStats();
     renderChapterList();
     syncCloud('auto');
