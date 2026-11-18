@@ -457,6 +457,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
       box-shadow: var(--shadow-sm);
     }
 
@@ -1808,6 +1810,11 @@
           <button class="btn-sm btn-mode-toggle" id="btnQuizModeToggle" onclick="toggleQuizReciteMode()" style="display:none; font-size:12px; padding:4px 10px;">
             📖 切为背题
           </button>
+          <!-- 选项随机开关 -->
+          <label id="shuffleOptionsToggleLabel" style="font-size:12px; color:var(--text-sub); display:flex; align-items:center; gap:4px; cursor:pointer;" title="每次做题打乱选项顺序，杜绝死记选项位置">
+            <input type="checkbox" id="shuffleOptionsToggle" checked style="accent-color:var(--primary);" onchange="handleShuffleToggleChange()">
+            <span>🔀 选项随机</span>
+          </label>
           <!-- 常规刷题自动下一题选项 -->
           <label id="autoNextToggleLabel" style="font-size:12px; color:var(--text-sub); display:flex; align-items:center; gap:4px; cursor:pointer;" title="答对自动切下一题">
             <input type="checkbox" id="autoNextToggle" checked style="accent-color:var(--primary);">
@@ -1877,11 +1884,16 @@
             </div>
           </div>
 
-          <!-- 错题本特有的掌握移出按钮 -->
-          <div class="wrong-tool-bar" id="wrongModeActionBar" style="display:none;">
-            <button class="btn-sm btn-secondary" style="font-size:12px; color:#047857; border-color:#a7f3d0;" onclick="removeCurrentFromWrongBook()">
-              🎉 本题已彻底掌握，移出错题本
+          <!-- 底部重做与错题本操作栏 -->
+          <div class="analysis-action-bar" id="analysisActionBar" style="margin-top:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button class="btn-sm btn-secondary" id="btnRetryQuestion" onclick="retryCurrentQuestion()" style="font-size:12px; display:inline-flex; align-items:center; gap:4px; padding:6px 12px; background:#fff; border:1px solid var(--border); cursor:pointer;" title="清空本作答状态，重新随机打乱选项再做一次">
+              🔄 重新作答 (打乱选项)
             </button>
+            <div class="wrong-tool-bar" id="wrongModeActionBar" style="display:none; margin:0;">
+              <button class="btn-sm btn-secondary" style="font-size:12px; color:#047857; border-color:#a7f3d0;" onclick="removeCurrentFromWrongBook()">
+                🎉 本题已彻底掌握，移出错题本
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2003,7 +2015,8 @@
       moduleProgress: {}, // 各模块上次退出前的题号位置：moduleKey -> lastIndex
       settings: {
         autoNext: true,
-        sound: true
+        sound: true,
+        shuffleOptions: true
       },
       last_modified: 0
     };
@@ -2077,6 +2090,10 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           userStore = Object.assign(userStore, JSON.parse(raw));
+          if (!userStore.settings) userStore.settings = {};
+          if (userStore.settings.shuffleOptions === undefined) {
+            userStore.settings.shuffleOptions = true;
+          }
           if (userStore.settings && userStore.settings.wrongStudyMode) {
             currentWrongStudyMode = userStore.settings.wrongStudyMode;
           }
@@ -2557,7 +2574,7 @@
       currentMode = 'wrong';
       currentModuleKey = 'wrong_chapter_' + chIndex + (isReciteMode ? '_recite' : '_practice');
       currentWrongCategoryTitle = (isReciteMode ? '📖 ' : '✍️ ') + ch.title + (isReciteMode ? ' · 错题背诵' : ' · 错题突破');
-      currentQuestions = chWrong;
+      currentQuestions = chWrong.map(rawQ => createSessionQuestion(rawQ, null, isShuffleOptionsEnabled()));
       wrongSessionAnswers = {}; // 重置本次重刷会话
 
       const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
@@ -2577,7 +2594,15 @@
     function startChapterQuiz(chIndex, targetQId = null) {
       currentMode = 'chapter';
       currentModuleKey = 'chapter_' + chIndex;
-      currentQuestions = ALL_QUESTIONS.filter(q => q.chapter_index === chIndex);
+      const rawList = ALL_QUESTIONS.filter(q => q.chapter_index === chIndex);
+      currentQuestions = rawList.map(rawQ => {
+        const h = userStore.history[rawQ.id];
+        if (h) {
+          return createSessionQuestion(rawQ, h.shuffledOrder || null, false);
+        } else {
+          return createSessionQuestion(rawQ, null, isShuffleOptionsEnabled());
+        }
+      });
 
       if (targetQId) {
         // 从总览指定题目跳转
@@ -2600,9 +2625,9 @@
     function startAllMixedQuiz(order = 'random') {
       currentMode = 'mixed';
       currentModuleKey = 'mixed_' + order;
-      currentQuestions = [...ALL_QUESTIONS];
+      let rawList = [...ALL_QUESTIONS];
       if (order === 'random') {
-        currentQuestions.sort(() => Math.random() - 0.5);
+        rawList.sort(() => Math.random() - 0.5);
         currentIndex = 0;
       } else {
         // 顺序连贯刷：自动记忆恢复上次练习题号！
@@ -2614,6 +2639,7 @@
           currentIndex = 0;
         }
       }
+      currentQuestions = rawList.map(rawQ => createSessionQuestion(rawQ, null, isShuffleOptionsEnabled()));
       setupQuizSession();
     }
 
@@ -2652,7 +2678,7 @@
       currentModuleKey = 'wrong_' + category + (isReciteMode ? '_recite' : '_practice');
       currentWrongCategory = category;
       currentWrongCategoryTitle = (isReciteMode ? '📖 ' : '✍️ ') + catTitle + (isReciteMode ? ' (背诵模式)' : ' (重练模式)');
-      currentQuestions = filtered;
+      currentQuestions = filtered.map(rawQ => createSessionQuestion(rawQ, null, isShuffleOptionsEnabled()));
       wrongSessionAnswers = {}; // 重置本次错题重练会话
 
       // 自动记忆恢复上次在指定分类下的刷题位置
@@ -2707,7 +2733,8 @@
         if (selectedMultiples.length === 10) break;
       }
 
-      currentQuestions = [...selectedSingles, ...selectedMultiples];
+      const rawExamList = [...selectedSingles, ...selectedMultiples];
+      currentQuestions = rawExamList.map(rawQ => createSessionQuestion(rawQ, null, isShuffleOptionsEnabled()));
       currentIndex = 0;
 
       // 启动考试倒计时 (45:00)
@@ -2734,6 +2761,176 @@
       document.getElementById('examTimerDisplay').textContent = `${m}:${s}`;
     }
 
+    // ==========================================
+    // 6.5 智能选项随机化与乱序引擎 (防死记位置)
+    // ==========================================
+    function getRawQuestion(qId) {
+      return ALL_QUESTIONS.find(q => q.id === qId) || null;
+    }
+
+    function isShuffleOptionsEnabled() {
+      if (!userStore.settings) userStore.settings = {};
+      if (userStore.settings.shuffleOptions === undefined) {
+        userStore.settings.shuffleOptions = true; // 默认开启
+      }
+      return userStore.settings.shuffleOptions;
+    }
+
+    function shuffleArray(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function generateShuffledKeys(origOptions) {
+      const keys = origOptions.map(o => o.key);
+      if (keys.length <= 1) return keys;
+
+      const pinnedRegex = /^(以上|上述)(都|均|全|皆)/;
+      const pinnedIdx = origOptions.findIndex(o => pinnedRegex.test((o.text || '').trim()));
+
+      if (pinnedIdx !== -1) {
+        const pinnedKey = origOptions[pinnedIdx].key;
+        const normalKeys = keys.filter(k => k !== pinnedKey);
+        const shuffledNormals = shuffleArray(normalKeys);
+        return [...shuffledNormals, pinnedKey];
+      }
+
+      let shuffled = shuffleArray(keys);
+      if (shuffled.length > 2 && shuffled.every((k, idx) => k === keys[idx])) {
+        [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+      }
+      return shuffled;
+    }
+
+    function createSessionQuestion(rawQ, customOrder = null, forceShuffle = false) {
+      if (!rawQ) return null;
+      const clone = JSON.parse(JSON.stringify(rawQ));
+      const origOptions = rawQ.options;
+      const origAnswer = rawQ.answer;
+
+      let orderedKeys = customOrder;
+      if (!orderedKeys) {
+        if (forceShuffle || isShuffleOptionsEnabled()) {
+          orderedKeys = generateShuffledKeys(origOptions);
+        } else {
+          orderedKeys = origOptions.map(o => o.key);
+        }
+      }
+
+      const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const newOptions = [];
+      const origCorrectSet = new Set(origAnswer.split(''));
+      const newCorrectKeys = [];
+      const keyMap = {};
+
+      orderedKeys.forEach((origKey, idx) => {
+        const newKey = letters[idx];
+        keyMap[origKey] = newKey;
+        const origOpt = origOptions.find(o => o.key === origKey);
+        newOptions.push({
+          key: newKey,
+          text: origOpt ? origOpt.text : '',
+          origKey: origKey
+        });
+        if (origCorrectSet.has(origKey)) {
+          newCorrectKeys.push(newKey);
+        }
+      });
+
+      clone.options = newOptions;
+      clone.answer = newCorrectKeys.sort().join('');
+      clone._shuffledKeys = orderedKeys;
+      clone._origAnswer = origAnswer;
+      clone._keyMap = keyMap;
+
+      if (rawQ.analysis && rawQ.analysis.options_analysis) {
+        const origAnalysisList = rawQ.analysis.options_analysis;
+        const newAnalysisList = newOptions.map(opt => {
+          const origItem = origAnalysisList.find(a => a.key === opt.origKey);
+          return {
+            key: opt.key,
+            text: opt.text,
+            isAnswer: origCorrectSet.has(opt.origKey),
+            analysis: origItem ? origItem.analysis : ''
+          };
+        });
+        clone.analysis.options_analysis = newAnalysisList;
+      }
+
+      if (clone.analysis && clone.analysis.detail) {
+        if (origAnswer !== clone.answer) {
+          clone.analysis.detail = clone.analysis.detail
+            .replace(new RegExp('正确选项为【' + origAnswer + '】', 'g'), '正确选项为【' + clone.answer + '】')
+            .replace(new RegExp('（' + origAnswer + '\\.', 'g'), '（' + clone.answer + '.');
+        }
+      }
+      if (clone.analysis && clone.analysis.tip) {
+        if (origAnswer !== clone.answer && origAnswer.length === 1 && clone.answer.length === 1) {
+          clone.analysis.tip = clone.analysis.tip
+            .replace(new RegExp('【' + origAnswer + '】', 'g'), '【' + clone.answer + '】');
+        }
+      }
+
+      return clone;
+    }
+
+    function getCanonicalAnswer(q, sessionAns) {
+      if (!q || !sessionAns || sessionAns === '我不会') return sessionAns;
+      if (!q.options) return sessionAns;
+      const res = [];
+      sessionAns.split('').forEach(k => {
+        const opt = q.options.find(o => o.key === k);
+        if (opt && opt.origKey) res.push(opt.origKey);
+        else res.push(k);
+      });
+      return res.sort().join('');
+    }
+
+    function handleShuffleToggleChange() {
+      const checkbox = document.getElementById('shuffleOptionsToggle');
+      const enabled = !!(checkbox && checkbox.checked);
+      if (!userStore.settings) userStore.settings = {};
+      userStore.settings.shuffleOptions = enabled;
+      saveStore(false);
+
+      const q = currentQuestions[currentIndex];
+      if (q) {
+        const isAnswered = (currentMode === 'exam') ? !!examAnswers[q.id] :
+                           (currentMode === 'wrong') ? !!wrongSessionAnswers[q.id] :
+                           !!userStore.history[q.id];
+        if (!isAnswered && currentMode !== 'exam_review') {
+          const rawQ = getRawQuestion(q.id);
+          currentQuestions[currentIndex] = createSessionQuestion(rawQ, null, enabled);
+          renderCurrentQuestion();
+        }
+      }
+      showToast(enabled ? '🔀 选项随机已开启 (每次做题顺序打乱)' : '📋 选项随机已关闭 (恢复默认 ABCD 顺序)');
+    }
+
+    function retryCurrentQuestion() {
+      const q = currentQuestions[currentIndex];
+      if (!q) return;
+
+      if (currentMode === 'wrong') {
+        delete wrongSessionAnswers[q.id];
+      } else if (currentMode === 'exam') {
+        delete examAnswers[q.id];
+      } else {
+        delete userStore.history[q.id];
+        saveStore(false);
+      }
+
+      const rawQ = getRawQuestion(q.id);
+      currentQuestions[currentIndex] = createSessionQuestion(rawQ, null, isShuffleOptionsEnabled());
+      currentMultiSelection.clear();
+      renderCurrentQuestion();
+      showToast('🔀 选项已重新打乱，请重新作答！');
+    }
+
     function setupQuizSession() {
       switchView('viewQuiz');
 
@@ -2742,6 +2939,15 @@
       document.getElementById('examTimerDisplay').style.display = isExam ? 'inline-block' : 'none';
       document.getElementById('btnExamSubmit').style.display = isExam ? 'inline-flex' : 'none';
       document.getElementById('autoNextToggleLabel').style.display = isExam ? 'none' : 'flex';
+
+      const shuffleToggleLabel = document.getElementById('shuffleOptionsToggleLabel');
+      if (shuffleToggleLabel) {
+        shuffleToggleLabel.style.display = (currentMode === 'exam_review') ? 'none' : 'flex';
+      }
+      const shuffleToggle = document.getElementById('shuffleOptionsToggle');
+      if (shuffleToggle) {
+        shuffleToggle.checked = isShuffleOptionsEnabled();
+      }
 
       const btnToggle = document.getElementById('btnQuizModeToggle');
       if (btnToggle) {
@@ -3055,8 +3261,10 @@
       userStore.history[q.id] = {
         answered: true,
         userAns: userAns,
+        canonicalUserAns: getCanonicalAnswer(q, userAns),
         isCorrect: isCorrect,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        shuffledOrder: q._shuffledKeys || null
       };
 
       if (!isCorrect) {
@@ -3337,6 +3545,8 @@
       document.getElementById('examTimerDisplay').style.display = 'none';
       document.getElementById('btnExamSubmit').style.display = 'none';
       document.getElementById('autoNextToggleLabel').style.display = 'none';
+      const shuffleToggleLabel = document.getElementById('shuffleOptionsToggleLabel');
+      if (shuffleToggleLabel) shuffleToggleLabel.style.display = 'none';
       renderCurrentQuestion();
     }
 
@@ -3537,7 +3747,13 @@
           history: {},
           wrongBook: {},
           examRecords: [],
-          settings: { autoNext: true, sound: true }
+          moduleProgress: {},
+          settings: {
+            autoNext: true,
+            sound: true,
+            shuffleOptions: true
+          },
+          last_modified: Date.now()
         };
         saveStore();
         alert('🎉 已彻底清空所有做题数据！');
