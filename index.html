@@ -1770,16 +1770,20 @@
       <!-- 核心模式入口 -->
       <div class="modes-grid">
         <!-- 模式一：全题库混刷 -->
-        <div class="mode-card primary-mode" onclick="startAllMixedQuiz('random')">
+        <div class="mode-card primary-mode">
           <div class="mode-icon-box">🔀</div>
           <div class="mode-card-title">
             <span>全题库混合刷题</span>
             <span class="mode-card-badge orange">全书 273 题</span>
           </div>
-          <div class="mode-card-desc">打破章节界限综合测试，驾考级即选即判，选完秒出详细解析与答题口诀。</div>
-          <div style="display:flex; gap:6px; margin-top:6px;">
-            <button class="btn-sm btn-primary" style="font-size:12px; padding:5px 12px;" onclick="event.stopPropagation(); startAllMixedQuiz('random')">🎲 随机乱序刷</button>
-            <button class="btn-sm btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="event.stopPropagation(); startAllMixedQuiz('order')">🔢 顺序连贯刷</button>
+          <div class="mode-card-desc">自动记忆上次刷题进度与做题状态，全部刷完一遍后可先背本轮错题再重刷，随时支持重新开始！</div>
+          <div id="mixedModeControls" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <button class="btn-sm btn-primary" style="font-size:12px; padding:5px 12px;" onclick="startAllMixedQuiz('random')">🎲 随机乱序刷</button>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <button class="btn-sm btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="startAllMixedQuiz('order')">🔢 顺序连贯刷</button>
+            </div>
           </div>
         </div>
 
@@ -1879,6 +1883,10 @@
           <!-- 错题即时模式切换按钮：背题模式 / 做题模式 -->
           <button class="btn-sm btn-mode-toggle" id="btnQuizModeToggle" onclick="toggleQuizReciteMode()" style="display:none; font-size:12px; padding:4px 10px;">
             📖 切为背题
+          </button>
+          <!-- 全库混刷重新开始按钮 -->
+          <button class="btn-sm btn-secondary" id="btnMixedRestart" onclick="confirmResetMixedSession(currentMixedOrder)" style="display:none; font-size:12px; padding:4px 10px; color:#b45309; border-color:#fde68a; background:#fffbeb;" title="清空本轮全库刷题进度，从第 1 题重新开始">
+            🔄 重新刷题
           </button>
           <!-- 选项随机开关 -->
           <label id="shuffleOptionsToggleLabel" style="font-size:12px; color:var(--text-sub); display:flex; align-items:center; gap:4px; cursor:pointer;" title="每次做题打乱选项顺序，杜绝死记选项位置">
@@ -2103,6 +2111,7 @@
       wrongBook: {},    // qId -> { count: 1, lastWrongTime: 0, removedTime: 0 }
       examRecords: [],  // [ { score: 40, date: '...', timeUsed: 120 } ]
       moduleProgress: {}, // 各模块上次退出前的题号位置：moduleKey -> lastIndex
+      mixedSessions: {},  // { mixed_random: { orderIds, index, answers, updatedAt }, mixed_order: ... }
       settings: {
         autoNext: true,
         sound: true,
@@ -2180,6 +2189,7 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           userStore = Object.assign(userStore, JSON.parse(raw));
+          if (!userStore.mixedSessions) userStore.mixedSessions = {};
           if (!userStore.settings) userStore.settings = {};
           if (userStore.settings.shuffleOptions === undefined) {
             userStore.settings.shuffleOptions = true;
@@ -2242,6 +2252,7 @@
         wrongBook: { ...(remote.wrongBook || {}) },
         examRecords: [ ...(remote.examRecords || []) ],
         moduleProgress: { ...(remote.moduleProgress || {}), ...(local.moduleProgress || {}) },
+        mixedSessions: { ...(remote.mixedSessions || {}) },
         settings: { ...(remote.settings || {}), ...(local.settings || {}) },
         last_modified: Math.max(local.last_modified || 0, remote.last_modified || 0)
       };
@@ -2314,6 +2325,16 @@
         if (!existingKeys.has(k)) {
           merged.examRecords.push(lRec);
           existingKeys.add(k);
+          hasChanges = true;
+          localHasNewer = true;
+        }
+      }
+
+      // 4. 合并全库随机/顺序刷题会话状态 (按 updatedAt 最新优先)
+      for (const [k, lSess] of Object.entries(local.mixedSessions || {})) {
+        const rSess = merged.mixedSessions[k];
+        if (!rSess || (lSess?.updatedAt || 0) > (rSess?.updatedAt || 0)) {
+          merged.mixedSessions[k] = lSess;
           hasChanges = true;
           localHasNewer = true;
         }
@@ -2484,6 +2505,7 @@
     let currentWrongCategoryTitle = '📕 全部错题重刷';
     let wrongSessionAnswers = {}; // 错题重刷独立作答状态，确保重刷时选项干净未答、绝不提前剧透答案！
     let mixedSessionAnswers = {}; // 全库随机刷/顺序连刷独立作答状态，确保进入时不剧透历史答案
+    let currentMixedOrder = 'random'; // 'random' | 'order'
     let lastRoundAllIds = [];     // 记录本轮错题全集 ID
     let lastRoundWrongIds = [];   // 记录本轮实测仍做错的题目 ID (供先背再刷)
     let currentQuestions = [];
@@ -2646,6 +2668,65 @@
         });
         wChContainer.innerHTML = wChItems.length > 0 ? wChItems.join('') : '<div style="font-size:12px; color:#15803d; padding:4px 0; font-weight:600;">🎉 目前没有未攻克的错题，太棒了！</div>';
       }
+
+      renderMixedModeCardControls();
+    }
+
+    function renderMixedModeCardControls() {
+      const container = document.getElementById('mixedModeControls');
+      if (!container) return;
+
+      const sessions = userStore.mixedSessions || {};
+      const configs = [
+        { order: 'random', icon: '🎲', freshLabel: '随机乱序刷', continueLabel: '继续随机刷', btnClass: 'btn-primary' },
+        { order: 'order', icon: '🔢', freshLabel: '顺序连贯刷', continueLabel: '继续顺序刷', btnClass: 'btn-secondary' }
+      ];
+
+      const total = ALL_QUESTIONS.length;
+      container.innerHTML = configs.map(cfg => {
+        const key = 'mixed_' + cfg.order;
+        const sess = sessions[key];
+        const answers = (sess && sess.answers) ? sess.answers : {};
+        const answeredCnt = Object.keys(answers).length;
+        const wrongCnt = Object.values(answers).filter(r => r && !r.isCorrect).length;
+        const savedIdx = (sess && typeof sess.index === 'number') ? sess.index : 0;
+        const hasProgress = !!(sess && Array.isArray(sess.orderIds) && sess.orderIds.length === total && (answeredCnt > 0 || savedIdx > 0));
+
+        const mainLabel = hasProgress
+          ? `${cfg.icon} ${cfg.continueLabel} (已刷 ${answeredCnt}/${total})`
+          : `${cfg.icon} ${cfg.freshLabel}`;
+
+        return `
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <button class="btn-sm ${cfg.btnClass}" style="font-size:12px; padding:5px 12px;" onclick="startAllMixedQuiz('${cfg.order}')">
+              ${mainLabel}
+            </button>
+            ${hasProgress ? `
+              <button class="btn-sm btn-secondary" style="font-size:12px; padding:5px 10px; color:#b45309; border-color:#fde68a; background:#fffbeb;" onclick="confirmResetMixedSession('${cfg.order}')" title="清空本轮进度，从第 1 题全新开始">
+                🔄 重新刷题
+              </button>
+            ` : ''}
+            ${hasProgress && wrongCnt > 0 ? `
+              <button class="btn-sm btn-secondary" style="font-size:12px; padding:5px 10px; color:#047857; border-color:#a7f3d0; background:#ecfdf5;" onclick="reciteMixedSessionWrongs('${cfg.order}')" title="直接背诵这一遍做错的题目">
+                📖 背本轮错题 (${wrongCnt})
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function reciteMixedSessionWrongs(order = 'random') {
+      const key = 'mixed_' + order;
+      const sess = userStore.mixedSessions ? userStore.mixedSessions[key] : null;
+      const answers = (sess && sess.answers) ? sess.answers : {};
+      const wrongIds = Object.keys(answers).filter(qId => answers[qId] && !answers[qId].isCorrect);
+      if (wrongIds.length === 0) {
+        alert('🎉 当前这一遍暂无错题！');
+        return;
+      }
+      const modeName = (order === 'random') ? '随机乱序刷' : '顺序连贯刷';
+      startCustomWrongRound(wrongIds, 'recite', `📖 ${modeName}本轮错题 · 背诵巩固`);
     }
 
     function renderChapterList() {
@@ -2772,26 +2853,96 @@
       setupQuizSession();
     }
 
-    function startAllMixedQuiz(order = 'random') {
+    function persistCurrentMixedSession(triggerCloud = false) {
+      if (currentMode !== 'mixed' || !currentModuleKey) return;
+      if (!userStore.mixedSessions) userStore.mixedSessions = {};
+      userStore.mixedSessions[currentModuleKey] = {
+        orderIds: currentQuestions.map(q => q.id),
+        index: currentIndex,
+        answers: mixedSessionAnswers,
+        updatedAt: Date.now()
+      };
+      if (!userStore.moduleProgress) userStore.moduleProgress = {};
+      userStore.moduleProgress[currentModuleKey] = currentIndex;
+      saveStore(triggerCloud);
+    }
+
+    function resetMixedSession(order = 'random', autoStart = true) {
+      const key = 'mixed_' + order;
+      if (!userStore.mixedSessions) userStore.mixedSessions = {};
+      if (!userStore.moduleProgress) userStore.moduleProgress = {};
+      if (autoStart) {
+        startAllMixedQuiz(order, true);
+        showToast('🔄 已重置进度，从第 1 题全新开始！');
+      } else {
+        userStore.mixedSessions[key] = {
+          orderIds: [],
+          index: 0,
+          answers: {},
+          updatedAt: Date.now()
+        };
+        userStore.moduleProgress[key] = 0;
+        saveStore(true);
+        updateHomeStats();
+      }
+    }
+
+    function confirmResetMixedSession(order = currentMixedOrder) {
+      const name = (order === 'random') ? '随机乱序刷' : '顺序连贯刷';
+      const ok = confirm(`确定要清空【${name}】的本轮刷题进度，从第 1 题重新开始吗？\n（不会删除总做题历史与错题本）`);
+      if (ok) {
+        resetMixedSession(order, true);
+      }
+    }
+
+    function startAllMixedQuiz(order = 'random', forceRestart = false) {
       currentMode = 'mixed';
       isReciteMode = false;
+      currentMixedOrder = order;
       currentModuleKey = 'mixed_' + order;
-      mixedSessionAnswers = {}; // 重置全库混刷独立作答状态，确保进入时隐藏答案闭卷重练
-      let rawList = [...ALL_QUESTIONS];
-      if (order === 'random') {
-        rawList.sort(() => Math.random() - 0.5);
-        currentIndex = 0;
-      } else {
-        // 顺序连贯刷：自动记忆恢复上次练习题号！
-        const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
-        if (saved !== undefined && saved > 0 && saved < rawList.length) {
-          currentIndex = saved;
-          showToast(`已为你恢复全库混刷进度：第 ${currentIndex + 1} / 273 题`);
-        } else {
-          currentIndex = 0;
+
+      const saved = (!forceRestart && userStore.mixedSessions) ? userStore.mixedSessions[currentModuleKey] : null;
+      const canResume = !!(saved && Array.isArray(saved.orderIds) && saved.orderIds.length === ALL_QUESTIONS.length);
+
+      if (canResume) {
+        const rawList = saved.orderIds.map(id => getRawQuestion(id)).filter(Boolean);
+        if (rawList.length === ALL_QUESTIONS.length) {
+          mixedSessionAnswers = { ...(saved.answers || {}) };
+          currentQuestions = rawList.map(rawQ => {
+            const rec = mixedSessionAnswers[rawQ.id];
+            if (rec) {
+              return createSessionQuestion(rawQ, rec.shuffledOrder || null, false);
+            }
+            return createSessionQuestion(rawQ, null, isShuffleOptionsEnabled());
+          });
+          currentIndex = (typeof saved.index === 'number' && saved.index >= 0 && saved.index < currentQuestions.length) ? saved.index : 0;
+          const answeredCnt = Object.keys(mixedSessionAnswers).length;
+          if (answeredCnt > 0 || currentIndex > 0) {
+            const label = (order === 'random') ? '随机乱序刷' : '顺序连贯刷';
+            showToast(`已恢复【${label}】上次进度：第 ${currentIndex + 1} / ${currentQuestions.length} 题（本轮已刷 ${answeredCnt} 题）`);
+          }
+          setupQuizSession();
+          return;
         }
       }
+
+      // 全新一轮：生成题序并立即持久化，保证随时退出再进无缝衔接
+      const rawList = (order === 'random') ? shuffleArray(ALL_QUESTIONS) : [...ALL_QUESTIONS];
+      mixedSessionAnswers = {};
+      currentIndex = 0;
       currentQuestions = rawList.map(rawQ => createSessionQuestion(rawQ, null, isShuffleOptionsEnabled()));
+
+      if (!userStore.mixedSessions) userStore.mixedSessions = {};
+      if (!userStore.moduleProgress) userStore.moduleProgress = {};
+      userStore.mixedSessions[currentModuleKey] = {
+        orderIds: rawList.map(q => q.id),
+        index: 0,
+        answers: {},
+        updatedAt: Date.now()
+      };
+      userStore.moduleProgress[currentModuleKey] = 0;
+      saveStore(!!forceRestart);
+
       setupQuizSession();
     }
 
@@ -3080,6 +3231,7 @@
         delete wrongSessionAnswers[q.id];
       } else if (currentMode === 'mixed') {
         delete mixedSessionAnswers[q.id];
+        persistCurrentMixedSession(false);
       } else if (currentMode === 'exam') {
         delete examAnswers[q.id];
       } else {
@@ -3112,6 +3264,11 @@
         shuffleToggle.checked = isShuffleOptionsEnabled();
       }
 
+      const btnMixedRestart = document.getElementById('btnMixedRestart');
+      if (btnMixedRestart) {
+        btnMixedRestart.style.display = (currentMode === 'mixed') ? 'inline-flex' : 'none';
+      }
+
       const btnToggle = document.getElementById('btnQuizModeToggle');
       if (btnToggle) {
         if (currentMode === 'wrong') {
@@ -3134,7 +3291,9 @@
       const total = currentQuestions.length;
 
       // 实时保存用户在当前模块下的做题位置
-      if (currentModuleKey) {
+      if (currentMode === 'mixed') {
+        persistCurrentMixedSession(false);
+      } else if (currentModuleKey) {
         if (!userStore.moduleProgress) userStore.moduleProgress = {};
         userStore.moduleProgress[currentModuleKey] = currentIndex;
         saveStore(false);
@@ -3145,7 +3304,7 @@
       document.getElementById('quizTotalCount').textContent = total;
 
       let modeTitle = '章节刷题';
-      if (currentMode === 'mixed') modeTitle = '🔀 全库混刷';
+      if (currentMode === 'mixed') modeTitle = (currentMixedOrder === 'random') ? '🎲 随机乱序刷' : '🔢 顺序连贯刷';
       else if (currentMode === 'wrong') modeTitle = currentWrongCategoryTitle || '📕 错题攻坚';
       else if (currentMode === 'exam') modeTitle = '⏱️ 全真模考';
       else if (currentMode === 'exam_review') modeTitle = '🔍 模考复盘';
@@ -3255,6 +3414,8 @@
           nextBtn.textContent = '📋 返回成绩单';
         } else if (currentMode === 'wrong') {
           nextBtn.textContent = isReciteMode ? '🏁 背完本轮 (去重刷)' : '🏁 完成本轮 (背诵/重刷)';
+        } else if (currentMode === 'mixed') {
+          nextBtn.textContent = '🏁 完成本轮 (背诵错题/重刷)';
         } else {
           nextBtn.textContent = '完成刷题';
         }
@@ -3375,7 +3536,8 @@
       if (currentMode === 'wrong') {
         wrongSessionAnswers[q.id] = { userAns, isCorrect };
       } else if (currentMode === 'mixed') {
-        mixedSessionAnswers[q.id] = { userAns, isCorrect };
+        mixedSessionAnswers[q.id] = { userAns, isCorrect, shuffledOrder: q._shuffledKeys || null };
+        persistCurrentMixedSession(false);
       }
 
       // 记录到用户存储
@@ -3430,7 +3592,8 @@
         if (currentMode === 'wrong') {
           wrongSessionAnswers[q.id] = { userAns, isCorrect };
         } else if (currentMode === 'mixed') {
-          mixedSessionAnswers[q.id] = { userAns, isCorrect };
+          mixedSessionAnswers[q.id] = { userAns, isCorrect, shuffledOrder: q._shuffledKeys || null };
+          persistCurrentMixedSession(false);
         }
         recordAnswerResult(q, userAns, isCorrect);
         playSound(isCorrect ? 'correct' : 'wrong');
@@ -3495,7 +3658,8 @@
         wrongSessionAnswers[q.id] = { userAns: '我不会', isCorrect: false };
       } else if (currentMode === 'mixed') {
         if (mixedSessionAnswers[q.id]) return;
-        mixedSessionAnswers[q.id] = { userAns: '我不会', isCorrect: false };
+        mixedSessionAnswers[q.id] = { userAns: '我不会', isCorrect: false, shuffledOrder: q._shuffledKeys || null };
+        persistCurrentMixedSession(false);
       } else {
         if (userStore.history[q.id]) return;
       }
@@ -3633,6 +3797,8 @@
           switchView('viewExamResult');
         } else if (currentMode === 'wrong') {
           openWrongRoundSummaryModal();
+        } else if (currentMode === 'mixed') {
+          openMixedRoundSummaryModal();
         } else {
           alert('🎉 恭喜！当前刷题单元已全部练习完毕！');
           goHome();
@@ -3803,6 +3969,94 @@
       showToast(isReciteMode ? `📖 已开启本轮 ${currentQuestions.length} 道错题背诵` : `✍️ 已打乱选项，开始重刷这 ${currentQuestions.length} 题！`);
     }
 
+    function openMixedRoundSummaryModal() {
+      const modal = document.getElementById('wrongRoundModal');
+      if (!modal) return;
+
+      // 保持当前会话记录不清空，仅在用户主动点击「重新刷题」时才从头重置
+      persistCurrentMixedSession(false);
+
+      const total = currentQuestions.length;
+      lastRoundAllIds = currentQuestions.map(q => q.id);
+
+      let correctNum = 0;
+      const wrongList = [];
+      const unansweredList = [];
+
+      currentQuestions.forEach(q => {
+        const rec = mixedSessionAnswers[q.id];
+        if (rec) {
+          if (rec.isCorrect) correctNum++;
+          else wrongList.push(q);
+        } else {
+          unansweredList.push(q);
+        }
+      });
+
+      const sortedWrongList = sortWrongQuestionsByLatest(wrongList);
+      lastRoundWrongIds = sortedWrongList.map(q => q.id);
+
+      const modeLabel = (currentMixedOrder === 'random') ? '全库随机刷' : '顺序连贯刷';
+      const titleEl = document.getElementById('wrongRoundTitle');
+      const statsEl = document.getElementById('wrongRoundStats');
+      const descEl = document.getElementById('wrongRoundDesc');
+      const actionsEl = document.getElementById('wrongRoundActions');
+
+      if (titleEl) titleEl.textContent = `🏁 ${modeLabel} · 本轮完成`;
+      if (statsEl) {
+        statsEl.style.display = 'grid';
+        statsEl.innerHTML = `
+          <div class="wrong-round-stat-box">
+            <div class="wrong-round-stat-val">${total}</div>
+            <div class="wrong-round-stat-lbl">本轮总题数</div>
+          </div>
+          <div class="wrong-round-stat-box" style="background:#ecfdf5; border-color:#a7f3d0;">
+            <div class="wrong-round-stat-val" style="color:#047857;">${correctNum}</div>
+            <div class="wrong-round-stat-lbl" style="color:#047857;">本轮做对</div>
+          </div>
+          <div class="wrong-round-stat-box" style="background:#fef2f2; border-color:#fecaca;">
+            <div class="wrong-round-stat-val" style="color:#b91c1c;">${lastRoundWrongIds.length}</div>
+            <div class="wrong-round-stat-lbl" style="color:#b91c1c;">本轮错题</div>
+          </div>
+        `;
+      }
+
+      const skippedHint = unansweredList.length > 0 ? `（另有 ${unansweredList.length} 题未作答）` : '';
+      let actionsHtml = '';
+
+      if (lastRoundWrongIds.length > 0) {
+        if (descEl) {
+          descEl.textContent = `💡 【${modeLabel}】这一遍共出现 ${lastRoundWrongIds.length} 道错题${skippedHint}！建议先背这一遍的错题（答案与解析全显），背完再接着重刷巩固；若想从第 1 题全新再来一轮，点击下方「重新刷题」！`;
+        }
+        actionsHtml += `
+          <button class="wrong-round-btn recite" onclick="startCustomWrongRound(lastRoundWrongIds, 'recite', '📖 全库本轮错题 · 背诵巩固')">
+            📖 先背这一遍的错题 (${lastRoundWrongIds.length} 题)
+          </button>
+          <button class="wrong-round-btn practice" onclick="startCustomWrongRound(lastRoundWrongIds, 'practice', '✍️ 全库本轮错题 · 再次重刷')">
+            ✍️ 直接重刷这一遍的错题 (${lastRoundWrongIds.length} 题)
+          </button>
+        `;
+      } else {
+        if (descEl) {
+          descEl.textContent = unansweredList.length > 0
+            ? `🎉 目前已刷题目全部答对${skippedHint}！如需重新开始一轮，可点击下方「重新刷题」。`
+            : `🏆 太强了！【${modeLabel}】本轮 ${total} 题全部答对无错题！点击「重新刷题」即可从头开启新一轮。`;
+        }
+      }
+
+      actionsHtml += `
+        <button class="wrong-round-btn retry-all" onclick="closeWrongRoundModal(); resetMixedSession(currentMixedOrder, true);">
+          🔄 重新刷题 (从第 1 题全新开始)
+        </button>
+        <button class="wrong-round-btn home" onclick="closeWrongRoundModal(); goHome();">
+          🏠 返回首页
+        </button>
+      `;
+
+      if (actionsEl) actionsEl.innerHTML = actionsHtml;
+      modal.classList.add('open');
+    }
+
     function finishMockExam(force = false) {
       if (!force) {
         // 检查未答题数
@@ -3905,6 +4159,8 @@
       document.getElementById('autoNextToggleLabel').style.display = 'none';
       const shuffleToggleLabel = document.getElementById('shuffleOptionsToggleLabel');
       if (shuffleToggleLabel) shuffleToggleLabel.style.display = 'none';
+      const btnMixedRestart = document.getElementById('btnMixedRestart');
+      if (btnMixedRestart) btnMixedRestart.style.display = 'none';
       renderCurrentQuestion();
     }
 
@@ -4109,6 +4365,7 @@
           wrongBook: {},
           examRecords: [],
           moduleProgress: {},
+          mixedSessions: {},
           settings: {
             autoNext: true,
             sound: true,
@@ -4116,6 +4373,8 @@
           },
           last_modified: Date.now()
         };
+        mixedSessionAnswers = {};
+        wrongSessionAnswers = {};
         saveStore();
         alert('🎉 已彻底清空所有做题数据！');
         updateHomeStats();
@@ -4479,6 +4738,8 @@
               finishMockExam();
             } else if (currentMode === 'wrong') {
               openWrongRoundSummaryModal();
+            } else if (currentMode === 'mixed') {
+              openMixedRoundSummaryModal();
             } else {
               showToast('已经是最后一题了');
             }
