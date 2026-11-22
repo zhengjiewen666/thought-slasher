@@ -2483,6 +2483,7 @@
     let currentWrongCategory = 'all'; // 'all' | 'high' | 'mid' | 'low'
     let currentWrongCategoryTitle = '📕 全部错题重刷';
     let wrongSessionAnswers = {}; // 错题重刷独立作答状态，确保重刷时选项干净未答、绝不提前剧透答案！
+    let mixedSessionAnswers = {}; // 全库随机刷/顺序连刷独立作答状态，确保进入时不剧透历史答案
     let lastRoundAllIds = [];     // 记录本轮错题全集 ID
     let lastRoundWrongIds = [];   // 记录本轮实测仍做错的题目 ID (供先背再刷)
     let currentQuestions = [];
@@ -2773,7 +2774,9 @@
 
     function startAllMixedQuiz(order = 'random') {
       currentMode = 'mixed';
+      isReciteMode = false;
       currentModuleKey = 'mixed_' + order;
+      mixedSessionAnswers = {}; // 重置全库混刷独立作答状态，确保进入时隐藏答案闭卷重练
       let rawList = [...ALL_QUESTIONS];
       if (order === 'random') {
         rawList.sort(() => Math.random() - 0.5);
@@ -2781,7 +2784,7 @@
       } else {
         // 顺序连贯刷：自动记忆恢复上次练习题号！
         const saved = userStore.moduleProgress ? userStore.moduleProgress[currentModuleKey] : undefined;
-        if (saved !== undefined && saved > 0 && saved < currentQuestions.length) {
+        if (saved !== undefined && saved > 0 && saved < rawList.length) {
           currentIndex = saved;
           showToast(`已为你恢复全库混刷进度：第 ${currentIndex + 1} / 273 题`);
         } else {
@@ -3058,6 +3061,7 @@
       if (q) {
         const isAnswered = (currentMode === 'exam') ? !!examAnswers[q.id] :
                            (currentMode === 'wrong') ? !!wrongSessionAnswers[q.id] :
+                           (currentMode === 'mixed') ? !!mixedSessionAnswers[q.id] :
                            !!userStore.history[q.id];
         if (!isAnswered && currentMode !== 'exam_review') {
           const rawQ = getRawQuestion(q.id);
@@ -3074,6 +3078,8 @@
 
       if (currentMode === 'wrong') {
         delete wrongSessionAnswers[q.id];
+      } else if (currentMode === 'mixed') {
+        delete mixedSessionAnswers[q.id];
       } else if (currentMode === 'exam') {
         delete examAnswers[q.id];
       } else {
@@ -3166,6 +3172,8 @@
         answeredRecord = examAnswers[q.id] || { userAns: '未作答', isCorrect: false };
       } else if (currentMode === 'wrong') {
         answeredRecord = wrongSessionAnswers[q.id] || null;
+      } else if (currentMode === 'mixed') {
+        answeredRecord = mixedSessionAnswers[q.id] || null;
       } else {
         answeredRecord = userStore.history[q.id] || null;
       }
@@ -3318,8 +3326,26 @@
             if (el) el.classList.add('selected-multi');
           }
         }
+      } else if (currentMode === 'mixed') {
+        // ================= 全库随机刷 / 顺序连刷 (本次会话独立作答，未答前不剧透) =================
+        if (mixedSessionAnswers[q.id]) {
+          return; // 本次会话中已答过则锁定
+        }
+
+        if (q.type === 'single') {
+          judgeSingleAnswer(optKey);
+        } else {
+          const el = document.getElementById('opt_' + optKey);
+          if (currentMultiSelection.has(optKey)) {
+            currentMultiSelection.delete(optKey);
+            if (el) el.classList.remove('selected-multi');
+          } else {
+            currentMultiSelection.add(optKey);
+            if (el) el.classList.add('selected-multi');
+          }
+        }
       } else {
-        // ================= 常规章节与全库刷题 =================
+        // ================= 常规章节刷题 =================
         if (userStore.history[q.id]) {
           return; // 已答过不可更改
         }
@@ -3348,6 +3374,8 @@
 
       if (currentMode === 'wrong') {
         wrongSessionAnswers[q.id] = { userAns, isCorrect };
+      } else if (currentMode === 'mixed') {
+        mixedSessionAnswers[q.id] = { userAns, isCorrect };
       }
 
       // 记录到用户存储
@@ -3401,6 +3429,8 @@
         const actionBar = document.getElementById('quizActionBar'); if (actionBar) actionBar.style.display = 'none';
         if (currentMode === 'wrong') {
           wrongSessionAnswers[q.id] = { userAns, isCorrect };
+        } else if (currentMode === 'mixed') {
+          mixedSessionAnswers[q.id] = { userAns, isCorrect };
         }
         recordAnswerResult(q, userAns, isCorrect);
         playSound(isCorrect ? 'correct' : 'wrong');
@@ -3463,6 +3493,9 @@
       if (currentMode === 'wrong') {
         if (wrongSessionAnswers[q.id]) return;
         wrongSessionAnswers[q.id] = { userAns: '我不会', isCorrect: false };
+      } else if (currentMode === 'mixed') {
+        if (mixedSessionAnswers[q.id]) return;
+        mixedSessionAnswers[q.id] = { userAns: '我不会', isCorrect: false };
       } else {
         if (userStore.history[q.id]) return;
       }
@@ -3571,6 +3604,7 @@
       if (q && q.type === 'multiple' && currentMultiSelection && currentMultiSelection.size > 0) {
         const isAnswered = (currentMode === 'exam') ? !!examAnswers[q.id] :
                            (currentMode === 'wrong') ? !!wrongSessionAnswers[q.id] :
+                           (currentMode === 'mixed') ? !!mixedSessionAnswers[q.id] :
                            !!userStore.history[q.id];
         if (!isAnswered) {
           submitMultiAnswer();
@@ -4031,6 +4065,9 @@
           stateClass = (ans && ans.isCorrect) ? 'done-correct' : 'done-wrong';
         } else if (currentMode === 'wrong') {
           const h = wrongSessionAnswers[q.id];
+          if (h) stateClass = h.isCorrect ? 'done-correct' : 'done-wrong';
+        } else if (currentMode === 'mixed') {
+          const h = mixedSessionAnswers[q.id];
           if (h) stateClass = h.isCorrect ? 'done-correct' : 'done-wrong';
         } else {
           const h = userStore.history[q.id];
